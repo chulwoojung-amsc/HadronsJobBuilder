@@ -8,10 +8,23 @@ from langchain.messages import (
 )
 
 llm = ChatOpenAI(
-    model="gpt-oss-120b-GGUF",
+    model="gpt-oss:120b",
     openai_api_key="sk-local",
-    openai_api_base="http://localhost:8000/v1"
+    openai_api_base="http://localhost:11434/v1",
+    temperature=0
 )
+
+amsc_llm_0t = ChatOpenAI(
+    model="gpt-oss-120b",
+    base_url="https://api.i2-core.american-science-cloud.org/",
+    temperature=0
+)
+
+#llm = ChatOpenAI(
+#    model="gpt-oss-120b-GGUF",
+#    openai_api_key="sk-local",
+#    openai_api_base="http://localhost:8000/v1"
+#)
 
 zerot_llm = ChatOpenAI(
     model="gpt-oss-120b-GGUF",
@@ -19,6 +32,14 @@ zerot_llm = ChatOpenAI(
     openai_api_base="http://localhost:8000/v1",
     temperature=0
 )
+
+quadro_llm = ChatOpenAI(
+    model="gpt-oss-120b",
+    openai_api_key='ollama',
+#    openai_api_base="http://localhost:8000/v1",
+    temperature=0
+)
+
           
 #query = input("What is your question? :")
 #query = "Compute the pion two-point and vector two-point functions using propagators of mass 0.01 and 0.03."
@@ -84,7 +105,7 @@ Here is the extra information you will need to completely specify the job:
 Only provide this extra information when it is explicitly requested by the tool.
 """)
 print(query)
-agent(query, zerot_llm, reload_state=False)
+agent(query, llm, reload_state=False)
 
 #agent(query, zerot_llm, reload_state=True, ckpoint_file="state.json")
 

@@ -2,16 +2,16 @@ from langchain_openai import ChatOpenAI
 from femtomeas import *
 
 local_llm = ChatOpenAI(
-    model="gpt-oss-120b-GGUF",
+    model="gpt-oss:120b",
     openai_api_key="sk-local",
-    openai_api_base="http://localhost:8000/v1",
+    openai_api_base="http://localhost:11434/v1",
     temperature=0
 )
 
 quadro_llm = ChatOpenAI(
     model="gpt-oss-120b",
     openai_api_key='ollama',
-    openai_api_base="http://localhost:8000/v1",
+#    openai_api_base="http://localhost:8000/v1",
     temperature=0
 )
 
@@ -27,7 +27,8 @@ amsc_llm_0t = ChatOpenAI(
     temperature=0
 )
 
-llm = quadro_llm
+llm = local_llm
+#llm = amsc_llm_0t
 
 query = input("Describe the observables you wish to compute: ")
 print(query)
