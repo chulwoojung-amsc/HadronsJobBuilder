@@ -1,8 +1,8 @@
 from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 from .api_general import *
-from .sfapi import known_machines
 from typing import Literal, Union, List, Optional, Tuple
 from . import globals
+from .utils import checkSafePath
 
 hadrons_info = None
 
@@ -140,15 +140,16 @@ def submitHadronsJob(machine: str,
         script=f"""#!/bin/bash
 #SBATCH -q {queue}
 #SBATCH -C gpu
-#SBATCH -A mp13_g
+#SBATCH -A {account}
 #SBATCH --ntasks-per-node=4
-#SBATCH -c 32
 #SBATCH --exclusive
 #SBATCH --gpus-per-task=1
-#SBATCH --gpu-bind=none
 #SBATCH -N {nodes}
 #SBATCH -t {time}
 #SBATCH -o {job_run_dir}/run.log
+
+now=$(date)        
+echo "Hadrons job started at ${{now}}"
         
 BIND="--cpu-bind=verbose,map_ldom:3,2,1,0"
 export MPICH_OFI_NIC_POLICY=GPU
@@ -169,9 +170,12 @@ EOF
 chmod u+x wrap.sh
 { hadrons_info[machine]["env"] }
         
-srun ${{BIND}} -n {ranks} ./wrap.sh { hadrons_info[machine]["bin"] }/HadronsXmlRun {job_run_dir}/run.xml --mpi {mpi_str} --grid {grid_str} --accelerator-threads 8 --shm 3072 --device-mem 15360 --threads 8 --log Iterative,Message,Error,Warning,Performance --comms-overlap --comms-concurrent --shm-mpi 1
+srun -c 32 --gpu-bind=none ${{BIND}} -n {ranks} ./wrap.sh { hadrons_info[machine]["bin"] }/HadronsXmlRun {job_run_dir}/run.xml --mpi {mpi_str} --grid {grid_str} --accelerator-threads 8 --shm 3072 --device-mem 15360 --threads 8 --log Iterative,Message,Error,Warning,Performance --comms-overlap --comms-concurrent --shm-mpi 1
 mv ${{SCRATCH_DIR}}/* {job_run_dir}/
-rmdir ${{SCRATCH_DIR}}        
+cd {job_run_dir}        
+rmdir ${{SCRATCH_DIR}}
+now=$(date)
+echo "Hadrons job completed at ${{now}}"
 """
     #######################################
         
@@ -180,4 +184,6 @@ rmdir ${{SCRATCH_DIR}}
         f.write(script)
     uploadSmallFile(machine, remote_script_path, "/tmp/batch_script.sh")
         
-    return executeBatchJob(machine, remote_script_path)
+    #return executeBatchJob(machine, remote_script_path)
+    return executeBatchJobCompat(machine, f"source {remote_script_path}", nodes=nodes, ranks_per_node=4, gpus_per_rank=1,
+                                 time=time, queue=queue, account=account, job_run_dir=job_run_dir, exclusive=True, allow_unsafe=False)

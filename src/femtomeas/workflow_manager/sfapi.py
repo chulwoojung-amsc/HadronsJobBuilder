@@ -4,9 +4,11 @@ from sfapi_client.compute import Machine
 import sfapi_client.paths
 import pathlib
 import io
+import json
 from typing import Literal, Union, List, Optional, Tuple
-from .api_general import checkSafePath
+from .utils import checkSafePath
 from . import globals
+import time
 
 known_machines = {  "Perlmutter" : { "sfapi_enum" : Machine.perlmutter }  }
 
@@ -201,20 +203,103 @@ def cancelJob(machine: str, jobid: str):
     
 
 machine_globus_endpoints = { "Perlmutter" : "perlmutter" }
+
+def globusTransferStatus(machine, transfer_id)-> str:
+    """
+    Query the status of a Globus transfer initiated from the API on the given machine, with the provided transfer_id
+    Returns the status from the following (cf. https://docs.globus.org/api/transfer/task/):
+    "ACTIVE"  The task is in progress.
+    "INACTIVE" The task has been suspended and will not continue without intervention. Currently, only credential expiration will cause this state.
+    "SUCCEEDED"  The task completed successfully.
+    "FAILED"  The task or one of its subtasks failed, expired, or was canceled.
+    """
+    def doit_(client, m):
+        return client.get("storage/globus/transfer/" + transfer_id)
     
-def globusCopyToMachine(machine: str, dest_path : str,
-                    source_endpoint: str, source_path : str,
-                    allow_unsafe=False):
-    if not allow_unsafe and not checkSafePath(machine, dest_path):
-        raise Exception("Attempting to copy data to a location outside of the sandbox")
-    if machine not in machine_globus_endpoints.keys():
-        raise Exception("Unknown machine endpoint")
-    
-    trans_args = { "source_uuid" : source_endpoint, "target_uuid" : machine_globus_endpoints[machine],
+    ret = sfAPIclientExecute(machine, doit_)
+
+    if ret.status_code == 200:
+        j = json.loads(ret.text)
+        return j["globus_status"]
+    else:
+        raise Exception("Globus transfer query, response content: " + ret.text)
+
+
+def _globusCopy(source_endpoint, dest_endpoint, source_path, dest_path, machine, block_until_complete=False):
+    trans_args = { "source_uuid" : source_endpoint, "target_uuid" : dest_endpoint,
                    "source_dir" : source_path, "target_dir" : dest_path }
-    print(trans_args)
     def doit_(client, m):
         return client.post("storage/globus/transfer", data=trans_args)
     
     ret = sfAPIclientExecute(machine, doit_)
-    print(ret)
+    if ret.status_code == 200:
+        j = json.loads(ret.text)
+        tid = j["transfer_id"]
+
+        if block_until_complete:
+            while (status := globusTransferStatus(machine, tid)) == "ACTIVE":
+                print(".", end="")
+                time.sleep(20)
+            print(status)
+
+        return tid
+    else:
+        raise Exception("Globus transfer failed, response content: " + ret.text)
+    
+    
+def globusCopyToMachine(machine: str, dest_path : str,
+                        source_endpoint: str, source_path : str,
+                        allow_unsafe=False,
+                        block_until_complete=False)-> str:
+    """
+    Perform a Globus transfer to the machine
+    Args:
+       machine: The destination machine
+       dest_path: The destination path on that machine (directory)
+       source_endpoint: The name/tag of the Globus source endpoint
+       source_path : The path on that endpoint
+       allow_unsafe : Allow movement to paths outside of the sandbox
+       block_until_complete : Poll the transfer status every 20s until the transfer is complete before returning
+    Return:
+       The transfer ID as a string
+
+    Notes:
+       If source_path is a filename, only that file will be copied. If it is a directory name only the contents of that directory will be copied, not the directory itself (even if there is no trailing /)
+    """
+    
+    if not allow_unsafe and not checkSafePath(machine, dest_path):
+        raise Exception("Attempting to copy data to a location outside of the sandbox")
+    if machine not in machine_globus_endpoints.keys():
+        raise Exception("Unknown machine endpoint")
+
+    return _globusCopy(source_endpoint, machine_globus_endpoints[machine], source_path, dest_path, machine, block_until_complete)
+
+    
+def globusCopyFromMachine(dest_endpoint: str, dest_path : str,
+                          machine: str, source_path : str,                          
+                          allow_unsafe=False,
+                          block_until_complete=False)-> str:
+    """
+    Perform a Globus transfer from the machine
+    Args:
+       dest_endpoint: The name/tag of the Globus target endpoint
+       dest_path : The path on that endpoint (directory)
+       machine: The source machine
+       source_path: The source path on that machine
+       allow_unsafe : Allow movement from paths outside of the sandbox
+       block_until_complete : Poll the transfer status every 20s until the transfer is complete before returning
+    Return:
+       The transfer ID as a string
+
+    Notes:
+       If source_path is a filename, only that file will be copied. If it is a directory name only the contents of that directory will be copied, not the directory itself (even if there is no trailing /)
+    """
+    
+    if not allow_unsafe and not checkSafePath(machine, source_path):
+        raise Exception("Attempting to copy data from a location outside of the sandbox")
+    if machine not in machine_globus_endpoints.keys():
+        raise Exception("Unknown machine endpoint")
+
+    return _globusCopy(machine_globus_endpoints[machine], dest_endpoint, source_path, dest_path, machine, block_until_complete)
+
+    

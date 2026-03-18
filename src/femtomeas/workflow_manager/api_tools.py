@@ -1,6 +1,6 @@
-from .sfapi import *
 from .api_general import *
 from langchain.tools import tool
+from typing import Literal, Union, List, Optional, Tuple
 
 @tool
 def queryMachineStatus_t(machine: str)-> bool:

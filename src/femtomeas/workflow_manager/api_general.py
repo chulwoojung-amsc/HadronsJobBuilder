@@ -1,17 +1,19 @@
 import pathlib
 import io
-from .sfapi import *
-from . import globals
+import time
 
-def checkSafePath(machine: str, path: str):
-    if globals.remote_workdir == None:
-        raise Exception("setupWorkflowAgent has not been called")
-    if machine not in globals.remote_workdir:
-        raise Exception("Unknown machine")
-    safe_p = pathlib.Path(globals.remote_workdir[machine]).resolve()
-    path_p = pathlib.Path(path).resolve()
-    tmp_p = pathlib.Path("/tmp")
-    return path_p.is_relative_to(safe_p) or path_p.is_relative_to(tmp_p)
+default_iri_api=True
+
+if default_iri_api:
+    print("Using IRI API")
+    from .iri_api import setupWorkflowAgent, remoteLs, remoteMkdir, uploadBytes, executeBatchJobCompat, remoteChmod, getJobState, cancelJob, queryMachineStatus
+    from .iri_api import known_machines
+else:
+    print("Using Superfacility API")
+    from .sfapi import setupWorkflowAgent, remoteLs, remoteMkdir, uploadBytes, executeBatchJob, getJobState, cancelJob, queryMachineStatus
+    from .sfapi import known_machines
+    
+from . import globals
 
 def testExecutablePrivileges(machine: str)-> bool:
     try:
@@ -37,3 +39,14 @@ def uploadSmallFile(machine: str, remote_path: str, local_path: str, allow_unsaf
     """
     with open(local_path, "rb") as fh:
         return uploadBytes(machine, remote_path, io.BytesIO( fh.read() ) )
+
+def watchJobStatus(machine, jobid, howlong=300, poll_freq=10):
+    t0=int(time.time())
+    while( int(time.time()) - t0 < howlong  ):
+        state = getJobState(machine, jobid)
+        print(state)
+        if state not in ("new", "queued", "active"):
+            print("Detected job completion")
+            break    
+        time.sleep(poll_freq)
+        
