@@ -8,12 +8,6 @@ local_llm = ChatOpenAI(
     temperature=0
 )
 
-quadro_llm = ChatOpenAI(
-    model="gpt-oss-120b",
-    openai_api_key='ollama',
-#    openai_api_base="http://localhost:8000/v1",
-    temperature=0
-)
 
 quadro_llm2 = ChatOpenAI(
     model="gpt-oss-120b",
@@ -27,8 +21,8 @@ amsc_llm_0t = ChatOpenAI(
     temperature=0
 )
 
-llm = local_llm
-#llm = amsc_llm_0t
+#llm = local_llm
+llm = amsc_llm_0t
 
 query = input("Describe the observables you wish to compute: ")
 print(query)
