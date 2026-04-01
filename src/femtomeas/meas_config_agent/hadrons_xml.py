@@ -16,7 +16,24 @@ class HadronsXML:
     @staticmethod
     def createSubElement(of, name):
         return ET.SubElement(of, name)
+
+    def read(self, filename):
+        self.tree = ET.parse(filename)
+        self.root = self.tree.getroot()
+
+        def _getck(elem, name):
+            ret = elem.find(name)
+            if ret == None:
+                raise Exception("Could not load element", name)
+            return ret
             
+        self.parameters = _getck(self.root, "parameters")
+        self.modules = _getck(self.root, "modules")
+        
+        self.trajcounter = _getck(self.parameters,"trajCounter")
+        self.database = _getck(self.parameters,"database")
+        self.genetic = _getck(self.parameters,"genetic")
+    
     def __init__(self):
         self.root = ET.Element("grid")
         self.tree = ET.ElementTree(self.root)
@@ -70,24 +87,33 @@ class HadronsXML:
         ET.indent(self.tree, space="  ")
         self.tree.write(filename, xml_declaration=True)
 
+    def toBytes(self):
+        """
+        Return a bytestring encoding of the script
+        """
+        return ET.tostring(self.root)
+    def toString(self):
+        """
+        Return a string encoding of the script
+        """
+        return ET.tostring(self.root, encoding='unicode')
+    def fromBytes(self, bstr):
+        """
+        (Re-)generate the script from a bytestring encoding
+        """
+        self.root  = ET.fromstring(bstr)
+        self.tree = ET.ElementTree(self.root)
 
-       
-#xml = HadronsXML()
-#m = xml.addModule("gauge", "MIO::LoadNersc")
-#xml.setValue(m, "file", "/path/to/config")#
-
-#xml.setTrajCounter(0,1,1)
-#xml.write("test.xml")
-
-
-    #   <parameters>
-    # <!-- trajectory loop, the trajectory number is appended as a suffix -->
-    # <!-- to file read an written by modules. It is also part of the     -->
-    # <!-- RNG seed.                                                      -->
-    # <trajCounter>
-    #   <start>1500</start>
-    #   <end>1520</end>
-    #   <step>20</step>
-    # </trajCounter>
-#ET.indent(tree, space="  ")
-#tree.write("test.xml", xml_declaration=True)
+        def _getck(elem, name):
+            ret = elem.find(name)
+            if ret == None:
+                raise Exception("Could not load element", name)
+            return ret
+            
+        self.parameters = _getck(self.root, "parameters")
+        self.modules = _getck(self.root, "modules")
+        
+        self.trajcounter = _getck(self.parameters,"trajCounter")
+        self.database = _getck(self.parameters,"database")
+        self.genetic = _getck(self.parameters,"genetic")
+    

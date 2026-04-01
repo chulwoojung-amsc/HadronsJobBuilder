@@ -16,7 +16,7 @@ def setHadronsInfo(hadrons_info_ : dict):
                                                }
     """
     for m in hadrons_info_.keys():
-        if m not in known_machines:
+        if m not in globals.remote_workdir:
             raise Exception("Invalid machine name")
         if "bin" not in hadrons_info_[m]:
             raise Exception("Bin dir must be provided")

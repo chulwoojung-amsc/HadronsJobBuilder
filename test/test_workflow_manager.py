@@ -1,128 +1,98 @@
-from femtomeas.workflow_manager.api_general import *
-from femtomeas.workflow_manager.api_tools import *
-from femtomeas.workflow_manager.hadrons import *
+import femtomeas.workflow_manager.globals as globals
+globals.api_impl = "SPOOF"
+
+from femtomeas.workflow_manager.api_general import setupWorkflowAgent
+from femtomeas.workflow_manager.manager import *
+from femtomeas.workflow_manager.hadrons import setHadronsInfo
+from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+
 import time
-import stat
-import os
-import json
-from femtomeas.workflow_manager.iri_api import executeBatchJobTest
 
-key_path = os.getenv("NERSC_SFAPI_KEY_PATH")
-if key_path == None:
-    raise Exception("Expect environment variable NERSC_SFAPI_KEY_PATH")
-
-machine = "Perlmutter"
-safe_dir = "/global/cfs/cdirs/mp13/ckelly/agent_safe_dir" #home is mounted read-only on PM
-setupWorkflowAgent(key_path, { machine : safe_dir }  )
-
-print("Machine",machine, "is up?:", queryMachineStatus(machine))
-
-if 0:
-    jobid = executeBatchJobCompat(machine, '''echo -e '#!/bin/bash\necho "Hello from ${SLURM_PROCID}"' > script.sh
-    chmod u+x script.sh
-    srun -n 4 ./script.sh
-    ''',
-    nodes=1, ranks_per_node=4, gpus_per_rank=1, time="5", queue="debug", account="amsc013_g", job_run_dir=safe_dir, exclusive=False, allow_unsafe=True)
-
-    watchJobStatus(machine, jobid)
-
-    
-if 0:
-    jobid = executeBatchJobCompat(machine, '''echo -e '#!/bin/bash\necho "Hello from ${SLURM_PROCID}"' > script.sh
-    chmod u+x script.sh
-    srun -n 4 ./script.sh
-    ''',
-    nodes=1, ranks_per_node=4, gpus_per_rank=1, time="1800", queue="debug", account="amsc013_g", job_run_dir=safe_dir, exclusive=False, allow_unsafe=True)
-    getJobState(machine,jobid)
-    cancelJob(machine, jobid)
-
-    
-if 0:
-    test_file = "test_upload.txt"
-    with open(test_file,"w") as f:
-       f.write("HELLO")
-
-    assert uploadSmallFile(machine, safe_dir + "/test1.txt", test_file ) == True
-
-if 0: #test if it preserves executable privilege  NO
-    test_script = "test_upload_script.sh"
-    with open(test_script,"w") as f:
-       f.write('''#!/bin/bash
-       echo HELLO''')
-    os.chmod(test_script, os.stat(test_script).st_mode | stat.S_IXUSR)
-
-    assert uploadSmallFile(machine, safe_dir + "/test_upload_script.sh", test_script ) == True
-
-if 0:
-    test_script = "test_upload_script.sh"
-    with open(test_script,"w") as f:
-       f.write('''#!/bin/bash
-       echo HELLO''')
-    assert uploadSmallFile(machine, safe_dir + "/test_upload_script.sh", test_script ) == True
-    remoteChmod(machine, safe_dir + "/test_upload_script.sh", "744")
-    
-    
-    
-if 0:
-    caught_exception=False
-    try:
-       remoteMkdir(machine, "pooh", allow_unsafe=True)
-    except Exception as e:
-       print("Caught expected exception '",e,"'")
-       caught_exception = True
-    assert caught_exception
-
-if 0:    
-    ret = remoteMkdirUnsafe(machine, safe_dir + "/1/2")
-    assert ret == 1 or ret == 2
-
+setupWorkflowAgent("/path/to/key", { "Perlmutter" : "/path/to/sandbox" })
 setHadronsInfo({ "Perlmutter" : { "bin" : "/global/u2/c/ckelly/CPS/install_mpi_pm_new/Hadrons_pm_new/bin",    "env" : "source /global/u2/c/ckelly/CPS/bld/grid_pm_develop/sourceme.sh" } } )
-#validateHadronsXML(machine, "hadrons_run.xml")
+
+
+xml = HadronsXML()
+xml.read("hadrons_run.xml")
+
+# man = JobManager()
+# man.start()
 
 if 0:
-    remoteMkdir(machine, safe_dir)
-    uploadSmallFile(machine, safe_dir + "/run.xml", "hadrons_run.xml")
+    #Test active transfer progression
+    jd = JobData()
 
-    script = f"""#!/bin/bash
-    #SBATCH -C gpu
-    #SBATCH -A mp13_g
-    #SBATCH -q debug
-    #SBATCH -N 1
-    #SBATCH -G 1
-    #SBATCH -t 5
-    #SBATCH -o {safe_dir}/test_run.log
+    t1 = TransferToAction("dtn","/path/to/src","Perlmutter","/path/to/dest")
+    t2 = TransferFromAction("Perlmutter","/path/to/src","dtn","/path/to/dest")
+    jobid = jd.enqueueJob([t1,t2])
 
-    source /global/u2/c/ckelly/CPS/bld/grid_pm_develop/sourceme.sh
-    cd ${{SCRATCH}} #SQLite DB is apparently not writeable on compute nodes!?
-    srun -n 1 /global/u2/c/ckelly/CPS/install_mpi_pm_new/Hadrons_pm_new/bin/HadronsXmlRun {safe_dir}/run.xml --mpi 1.1.1.1 --grid 8.8.8.8
-    """
+    jd.startWorkflows([jobid])
+    status = jd.jobStatus(jobid)
+    assert status['head_action_status'] == ActionStatus.ACTIVE
 
-    print(script)
-    jobid = executeBatchJob(machine, script)
+    #Track active transfer state until completion
+    updates = {}
+    while jobid not in updates:
+        updates = jd.progressActiveActions(force_poll=True)
+        time.sleep(2)
+                
+    print("Update action to status",updates[jobid])
+    assert updates[jobid] == ActionStatus.COMPLETED
 
-    while(1):
-        state = getJobState(machine, jobid)
-        print(state)
-        if state not in ("new", "queued", "active"):
-            print("Detected job completion")
-            break    
-        time.sleep(10)
+    #Enact next workflow stage
+    jd.progressActiveWorkflows()
+    status = jd.jobStatus(jobid)
+    print("New action type", status['head_action_type'],"and status", status['head_action_status'], "expect", type(t2).__name__, "ACTIVE")
+    assert status['head_action_type'] == type(t2).__name__ and status['head_action_status'] == ActionStatus.ACTIVE
 
-if 0:        
-    jobid = submitHadronsJob(machine, "hadrons_run.xml", f"{safe_dir}/test_job", "mp13_g", "debug", "5", (16,16,8,8), (2,2,1,1))
-    while(1):
-        state = getJobState(machine, jobid)
-        print(state)
-        if state not in ("new", "queued", "active"):
-            print("Detected job completion")
-            break    
-        time.sleep(10)
-
-if 0:
-    tid = globusCopyToMachine(machine, safe_dir, "dtn", "/global/cfs/cdirs/mp13/ckelly/globus_source_test_dir", block_until_complete=True)
-    for i in range(10):
-        print(globusTransferStatus(machine, tid))
+    updates = {}
+    while jobid not in updates:
+        updates = jd.progressActiveActions(force_poll=True)
         time.sleep(2)
 
+    print("Update action to status",updates[jobid])
+    assert updates[jobid] == ActionStatus.COMPLETED
+
+    jd.progressActiveWorkflows()
+    status = jd.jobStatus(jobid)
+    
+    assert status['workflow_stage'] == 2 and status['head_action_status'] == ActionStatus.COMPLETED and status['head_action_class'] == ActionClass.NONE
+
 if 0:
-    globusCopyFromMachine("dtn", "/global/cfs/cdirs/mp13/ckelly/globus_source_test_dir/copyback",  machine, safe_dir + "/test.dat", block_until_complete=True)
+    #Test a complete workflow under a loop until termination
+    jd = JobData()
+
+    spec = HadronsJobSpec("/path/to/jobdir", xml, grid=(8,8,8,16) )
+    t1 = TransferToAction("dtn","/path/to/src","Perlmutter","/path/to/dest")
+    t2 = HadronsComputeAction(machine="Perlmutter",account="amsc013_g",queue="debug", time="300", spec=spec, mpi=(1,1,1,2) )
+    t3 = TransferFromAction("Perlmutter","/path/to/src","dtn","/path/to/dest")
+    jobid = jd.enqueueJob([t1,t2,t3])
+
+    jd.startWorkflows([jobid])
+
+    status = jd.jobStatus(jobid)
+    while status['head_action_class'] != ActionClass.NONE:
+        time.sleep(2)
+        jd.progressActiveState(force_poll=2)
+        status = jd.jobStatus(jobid)
+    
+
+if 1:
+    #Test a complete workflow under the threaded loop
+    jman = JobManager(poll_freq=1)
+    jman.start()
+    
+    spec = HadronsJobSpec("/path/to/jobdir", xml, grid=(8,8,8,16) )
+    t1 = TransferToAction("dtn","/path/to/src","Perlmutter","/path/to/dest")
+    t2 = HadronsComputeAction(machine="Perlmutter",account="amsc013_g",queue="debug", time="300", spec=spec, mpi=(1,1,1,2) )
+    t3 = TransferFromAction("Perlmutter","/path/to/src","dtn","/path/to/dest")
+
+    jobid = jman(lambda jd: jd.enqueueJob([t1,t2,t3]))
+    jman(lambda jd: jd.startWorkflows([jobid]))
+    
+    status = jman(lambda jd: jd.jobStatus(jobid))
+    while status['head_action_class'] != ActionClass.NONE:
+        time.sleep(2)
+        status = jman(lambda jd: jd.jobStatus(jobid))
+    
+    jman.stop()

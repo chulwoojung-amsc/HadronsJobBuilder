@@ -1,19 +1,22 @@
 import pathlib
 import io
 import time
-
-default_iri_api=True
-
-if default_iri_api:
-    print("Using IRI API")
-    from .iri_api import setupWorkflowAgent, remoteLs, remoteMkdir, uploadBytes, executeBatchJobCompat, remoteChmod, getJobState, cancelJob, queryMachineStatus
-    from .iri_api import known_machines
-else:
-    print("Using Superfacility API")
-    from .sfapi import setupWorkflowAgent, remoteLs, remoteMkdir, uploadBytes, executeBatchJob, getJobState, cancelJob, queryMachineStatus
-    from .sfapi import known_machines
-    
 from . import globals
+
+if globals.api_impl == "IRI":
+    print("Using IRI API")
+    from .iri_api import setupWorkflowAgent, remoteLs, remoteMkdir, uploadBytes, executeBatchJobCompat, remoteChmod, getJobState, cancelJob, queryMachineStatus, globusTransferStatus, globusCopyToMachine, globusCopyFromMachine
+    #from .iri_api import known_machines
+elif globals.api_impl == "SF":
+    print("Using Superfacility API")
+    from .sfapi import setupWorkflowAgent, remoteLs, remoteMkdir, uploadBytes, executeBatchJob, getJobState, cancelJob, queryMachineStatus, globusTransferStatus, globusCopyToMachine, globusCopyFromMachine
+    #from .sfapi import known_machines
+elif globals.api_impl == "SPOOF":
+    print("Using Spoof API")
+    from .spoof_api import setupWorkflowAgent, remoteMkdir, uploadBytes, executeBatchJobCompat, getJobState, globusTransferStatus, globusCopyToMachine, globusCopyFromMachine
+else:
+    raise Exception("Unknown API implementation")
+
 
 def testExecutablePrivileges(machine: str)-> bool:
     try:
