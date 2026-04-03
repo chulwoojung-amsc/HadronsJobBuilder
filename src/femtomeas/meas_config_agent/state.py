@@ -10,6 +10,7 @@ from .solver_config import *
 from .propagator_config import *
 from .gauge import *
 from .eigenvectors import *
+from .hadrons_xml import HadronsXML
 
 def checkpointState(state, filename):
     #j = json.dumps({k: v.model_dump() for k, v in state.items()}, indent=2)
@@ -69,4 +70,47 @@ class State(BaseModel):
             if p.name == prop_name:
                 return True
         return False
+
+    def _toHadronsXMLbase(self)->HadronsXML:
+        """
+        Set all elements bar the gauge module, which needs special treatment
+        """
+        xml = HadronsXML()
+        xml.setRunID(1234) #What does this do?
+
+        for a in self.actions:
+            a.setXML(xml)
+        for s in self.sources:
+            s.setXML(xml)
+        for s in self.solvers:
+            s.setXML(xml)
+        for p in self.propagators:
+            p.setXML(xml)
+
+        #Temporary; add a zero-momentum point sink for two-point functions
+        #TODO: Have the observables agent also construct sinks as needed
+        snk = xml.addModule("point_sink_zerop", "MSink::ScalarPoint")
+        HadronsXML.setValue(snk, "mom", "0. 0. 0.")
+
+        for o in self.observable_configs:
+            o.setXML(xml)
+        return xml
+
         
+    
+    def toHadronsXML(self)->HadronsXML:
+        xml=self._toHadronsXMLbase()
+        self.gauge.setXML(xml)
+        return xml
+
+    def toHadronsXMLsingleConf(self,job_index,override_path = None ):
+        """
+        Output the XML just for a single configuration.
+        job_index : The index of the entry in the range, i.e. 0 -> start, 1 -> start+step,  etc
+        override_path : Replace the path in which the file resides, e.g. if it was moved prior to execution
+        """
+        xml=self._toHadronsXMLbase()
+        self.gauge.setXMLsingle(xml,job_index,override_path)
+        return xml
+
+    

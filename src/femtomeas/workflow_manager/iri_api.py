@@ -7,21 +7,28 @@ from typing import Literal, Union, List, Optional, Tuple
 import time
 import pathlib
 import io
+import os
+import stat
+from pathlib import Path
+import globus_sdk
+from globus_sdk.exc import GlobusAPIError
 from .utils import checkSafePath
 
 known_machines = {  "Perlmutter" : { "iriapi_base" : "https://api.iri.nersc.gov/api/v1", "iriapi_group" : "perlmutter", "sfapi_base" : "https://api.nersc.gov/api/v1.2" } }
+tokens = { "iriapi_base" : None, "sfapi_base" : None }  #index tokens by their base path
+
+#Right now we use IRI for everything but the Globus transfers, so we need to use the Superfacility API also
 
 sfapi_session = None
 sfapi_client = None
 
-def setupWorkflowAgent(key_path, work_dir : dict):
+def setupSFapi(key_path):
     """
-    Setup the workflow agent
+    Setup the Superfacility API workflow agent
     Args:
        key_path: The full path to the key file in .pem format (with username on the first line) as per https://nersc.github.io/sfapi_client/quickstart/#__tabbed_9_2  "Storing keys in files"
        work_dir: The remote work directories, by machine as a dict, e.g. { "Perlmutter" : "/path/to/dir" }.  The agent is only allowed to modify the contents of files within this directory or its children
     """
-    globals.remote_workdir=work_dir
     token_url = "https://oidc.nersc.gov/c2id/token"    
     with open(key_path, 'r') as f:
         client_id = f.readline().strip()
@@ -62,15 +69,135 @@ def setupWorkflowAgent(key_path, work_dir : dict):
 
         global sfapi_client
         sfapi_client = httpx.Client()
+
+        global tokens
+        tokens['sfapi_base'] = sfapi_session.fetch_token()['access_token']
+        
+
+############################################################
+####IRI API SETUP
+#############################################################
+
+GLOBUS_CLIENT_ID = "eb18f0bb-4c76-43b5-88f1-750782be30ad" #Femtomeas, ckelly@bnl.gov
+#GLOBUS_CLIENT_ID="ca88ea48-f167-44ef-9520-ac2f0d92faa6"
+
+
+IRI_RESOURCE_SERVER="ed3e577d-f7f3-4639-b96e-ff5a8445d699"
+RESOURCE_SERVER = "auth.globus.org"
+REQUIRED_SCOPES = {
+    f"https://auth.globus.org/scopes/{IRI_RESOURCE_SERVER}/iri_api"
+}
+        
+def parse_scope_string(scope_string: str) -> set[str]:
+    return set(scope_string.split()) if scope_string else set()
+
+def ensure_private_parent_dir(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
+
+def load_tokens(token_file: Path) -> dict | None:
+    if not token_file.exists():
+        return None
+    with token_file.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_tokens(token_file: Path, tokens: dict) -> None:
+    ensure_private_parent_dir(token_file)
+    tmp = token_file.with_suffix(".tmp")
+    with os.fdopen(
+        os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600),
+        "w",
+        encoding="utf-8",
+    ) as f:
+        json.dump(tokens, f, indent=2)
+    os.replace(tmp, token_file)
+    os.chmod(token_file, stat.S_IRUSR | stat.S_IWUSR)
+
+
+def interactive_login(client: globus_sdk.NativeAppAuthClient) -> dict:
+    client.oauth2_start_flow(
+        requested_scopes=" ".join(sorted(REQUIRED_SCOPES)),
+        refresh_tokens=True,
+    )
+    print("Open this URL, login, and consent:")
+    print(client.oauth2_get_authorize_url(query_params={"prompt": "login"}))
+    
+    code = input("\nEnter authorization code: ").strip()
+    token_response = client.oauth2_exchange_code_for_tokens(code)
+    return token_response.by_resource_server[IRI_RESOURCE_SERVER]
+
+
+def refresh_tokens(
+    client: globus_sdk.NativeAppAuthClient, refresh_token: str
+) -> dict | None:
+    try:
+        token_response = client.oauth2_refresh_token(refresh_token)
+        return token_response.by_resource_server[IRI_RESOURCE_SERVER]
+    except GlobusAPIError as exc:
+        print(
+            f"Refresh failed ({exc.http_status}); switching to interactive login."
+        )
+        return None
+
+
+def setupIRIapi(key_path):
+    client =  globus_sdk.NativeAppAuthClient(GLOBUS_CLIENT_ID)
+
+    print("setupIRIapi checking stored tokens at",key_path)
+    stored = load_tokens(Path(key_path))
+    auth_data = None
+    if stored and stored.get("refresh_token"):
+        auth_data = refresh_tokens(client, stored["refresh_token"])
+
+    if auth_data == None:
+        auth_data = interactive_login(client)
+
+    print("AUTH_DATA", auth_data)
+        
+    granted = parse_scope_string(auth_data.get("scope", ""))
+    missing = REQUIRED_SCOPES - granted
+    if missing:
+        raise RuntimeError(f"Missing required scopes: {sorted(missing)}")
+
+    save_tokens(Path(key_path), auth_data)
+
+    expires_at = auth_data.get("expires_at_seconds")
+    if expires_at:
+        ttl = int(expires_at - time.time())
+        print(f"\nAccess token valid for ~{max(ttl, 0)} seconds.")
+
+    print(f"Saved token data to {key_path}")
+    print(f"Granted scopes: {auth_data.get('scope', '')}")
+
+    tokens['iriapi_base'] = auth_data['access_token']
+    
+    
+################################################
+##### Public facing API
+################################################
+        
+def setupWorkflowAgent(sfapi_key_path: str, iriapi_key_path : str, work_dir : dict):
+    """
+    Setup the workflow agent
+    Args:
+       sfapi_key_path: The full path to the SF API key file in .pem format (with username on the first line) as per https://nersc.github.io/sfapi_client/quickstart/#__tabbed_9_2  "Storing keys in files"
+       iriapi_key_path: The full path to the IRI API key file. This will be generated automatically if it doesn't currently exist.
+       work_dir: The remote work directories, by machine as a dict, e.g. { "Perlmutter" : "/path/to/dir" }.  The agent is only allowed to modify the contents of files within this directory or its children
+    """
+    globals.remote_workdir=work_dir
+    setupSFapi(sfapi_key_path)
+    setupIRIapi(iriapi_key_path)    
         
 
 def get(machine, suburl, params = None, base='iriapi_base'):
     assert sfapi_session != None and sfapi_client != None
     assert machine in known_machines
     assert base in known_machines[machine]
-    
-    base = known_machines[machine][base]
-    resp = sfapi_client.get(base + '/' + suburl, headers={ "accept" : "application/json", "Authorization" : f"Bearer {sfapi_session.fetch_token()['access_token']}" }, params=params, timeout=300  )
+    assert base in tokens
+
+    token = tokens[base]
+    base_path = known_machines[machine][base]
+    resp = sfapi_client.get(base_path + '/' + suburl, headers={ "accept" : "application/json", "Authorization" : f"Bearer {token}" }, params=params, timeout=300  )
     if resp.status_code == 200:
         j = json.loads(resp.text)
         return j
@@ -193,10 +320,13 @@ def remoteLs(machine: str, path: str)-> List[str]:
 def put(machine, suburl, data = None, params=None):
     assert sfapi_session != None and sfapi_client != None
     assert machine in known_machines
-    base = known_machines[machine]['iriapi_base']
-    headers={ "accept" : "application/json", "Authorization" : f"Bearer {sfapi_session.fetch_token()['access_token']}" }
+    assert 'iriapi_base' in tokens
     
-    resp = sfapi_client.put(base + '/' + suburl, headers=headers, json=data, params=params, timeout=300)
+    token = tokens['iriapi_base']   
+    base_path = known_machines[machine]['iriapi_base']
+    headers={ "accept" : "application/json", "Authorization" : f"Bearer {token}" }
+    
+    resp = sfapi_client.put(base_path + '/' + suburl, headers=headers, json=data, params=params, timeout=300)
     return json.loads(resp.text), resp.status_code
 
 
@@ -224,11 +354,13 @@ def post(machine, suburl, data = None, params=None, files=None, base='iriapi_bas
     assert sfapi_session != None and sfapi_client != None
     assert machine in known_machines
     assert base in known_machines[machine]
+    assert base in tokens
+
+    token = tokens[base]      
+    base_path = known_machines[machine][base]
+    headers={ "accept" : "application/json", "Authorization" : f"Bearer {token}" }
     
-    base = known_machines[machine][base]
-    headers={ "accept" : "application/json", "Authorization" : f"Bearer {sfapi_session.fetch_token()['access_token']}" }
-    
-    resp = sfapi_client.post(base + '/' + suburl, headers=headers, json=data if data_is_json else None, data=data if not data_is_json else None, params=params, files=files, timeout=300 )
+    resp = sfapi_client.post(base_path + '/' + suburl, headers=headers, json=data if data_is_json else None, data=data if not data_is_json else None, params=params, files=files, timeout=300 )
     return json.loads(resp.text), resp.status_code
     
 def remoteMkdir(machine: str, path: str, create_parents = True, allow_unsafe = False)-> int:
@@ -395,8 +527,11 @@ def getJobState(machine: str, jobid: str) -> str:
 def delete(machine, suburl, params = None):
     assert sfapi_session != None and sfapi_client != None
     assert machine in known_machines
-    base = known_machines[machine]['iriapi_base']
-    resp = sfapi_client.delete(base + '/' + suburl, headers={ "accept" : "*/*", "Authorization" : f"Bearer {sfapi_session.fetch_token()['access_token']}" }, params=params, timeout=300  )
+    assert 'iriapi_base' in tokens
+    
+    token = tokens['iriapi_base']         
+    base_path = known_machines[machine]['iriapi_base']
+    resp = sfapi_client.delete(base_path + '/' + suburl, headers={ "accept" : "*/*", "Authorization" : f"Bearer {token}" }, params=params, timeout=300  )
     return {} if resp.text == "" else resp.json(), resp.status_code
 
 def cancelJob(machine: str, jobid: str):

@@ -136,6 +136,11 @@ def submitHadronsJob(machine: str,
 
     ###################################
     if machine == "Perlmutter":
+        if ranks < 4:
+            bind="" #Entire node must be allocated for verbose,map_ldom
+        else:
+            bind = "--cpu-bind=verbose,map_ldom:3,2,1,0"
+            
         nodes = (ranks + 3) // 4
         script=f"""#!/bin/bash
 #SBATCH -q {queue}
@@ -151,7 +156,7 @@ def submitHadronsJob(machine: str,
 now=$(date)        
 echo "Hadrons job started at ${{now}}"
         
-BIND="--cpu-bind=verbose,map_ldom:3,2,1,0"
+BIND="{bind}"
 export MPICH_OFI_NIC_POLICY=GPU
 
 #Hadrons uses an SQLite database that has I/O failures on Lustre. We need to actually run in a temporary directory then move everything back        

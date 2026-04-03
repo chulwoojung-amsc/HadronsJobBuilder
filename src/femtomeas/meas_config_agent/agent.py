@@ -4,7 +4,7 @@ from .state import *
 from .hadrons_xml import HadronsXML
 import femtomeas.workflow_manager as wfman
 
-def agent(query, model, ckpoint_file="state.json", reload_state=True, output_xml_file="hadrons_run.xml"):
+def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
     if reload_state and os.path.exists(ckpoint_file):
         state = reloadStateCheckpoint(ckpoint_file)
         query = state.query
@@ -106,31 +106,5 @@ GAUGE CONFIGURATIONS
         """)
         state.gauge = identifyGaugeConfigs(model, messages)
         checkpointState(state,ckpoint_file)
-        
-    #XML output
-    xml = HadronsXML()
-    xml.setRunID(1234)
-    
-    state.gauge.setXML(xml)
-    for a in state.actions:
-        a.setXML(xml)
-    for s in state.sources:
-        s.setXML(xml)
-    for s in state.solvers:
-        s.setXML(xml)
-    for p in state.propagators:
-        p.setXML(xml)
 
-    #Temporary; add a zero-momentum point sink for two-point functions
-    #TODO: Have the observables agent also construct sinks as needed
-    snk = xml.addModule("point_sink_zerop", "MSink::ScalarPoint")
-    HadronsXML.setValue(snk, "mom", "0. 0. 0.")
-        
-    for o in state.observable_configs:
-        o.setXML(xml)
-    
-    xml.write(output_xml_file)
-
-    if queryYesNo("Would you like FemtoMind to run and manage the measurement workflow?"):
-        wfman.manageWorkflow(model, output_xml_file)
-    
+    return state

@@ -14,15 +14,16 @@ known_machines = {  "Perlmutter" : { "sfapi_enum" : Machine.perlmutter }  }
 
 sfapi_key_path=None
 
-def setupWorkflowAgent(key_path, work_dir : dict):
+def setupWorkflowAgent(_sfapi_key_path: str, iriapi_key_path : str, work_dir : dict):
     """
     Setup the workflow agent
     Args:
-       key_path: The full path to the key file in .pem format (with username on the first line) as per https://nersc.github.io/sfapi_client/quickstart/#__tabbed_9_2  "Storing keys in files"
+       _sfapi_key_path: The full path to the key file in .pem format (with username on the first line) as per https://nersc.github.io/sfapi_client/quickstart/#__tabbed_9_2  "Storing keys in files"
+       iriapi_key_path: Ignored
        work_dir: The remote work directories, by machine as a dict, e.g. { "Perlmutter" : "/path/to/dir" }.  The agent is only allowed to modify the contents of files within this directory or its children
     """
     global sfapi_key_path
-    sfapi_key_path = key_path
+    sfapi_key_path = _sfapi_key_path
     globals.remote_workdir=work_dir
 
 sfapi_clients = {}

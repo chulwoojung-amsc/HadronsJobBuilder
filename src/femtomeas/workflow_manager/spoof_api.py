@@ -3,8 +3,9 @@ import time as timemodule
 import io
 from . import globals
 
-def setupWorkflowAgent(key_path, work_dir : dict):
+def setupWorkflowAgent(sfapi_key_path: str, iriapi_key_path : str, work_dir : dict):
     globals.remote_workdir=work_dir
+    print("WORKDIR", globals.remote_workdir)
 
 tid = 0
 transfers = { }

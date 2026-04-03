@@ -12,14 +12,19 @@ from .hadrons import submitHadronsJob
 from . import globals
 
 from enum import Enum
+import re
+
+def replaceJobIdSubstring(in_str, job_id):
+    """Replace instances of <JOBID> with the job index in path strings"""
+    return re.sub(r'<JOBID>', str(job_id), in_str)
 
 class HadronsJobSpec:
-    job_subdir : str #Job directory relative to base sandbox. The actual job will be executed within a subdirectory of this named by the id to ensure uniqueness
-    xml_spec : bytes #The XML spec as a bytestring
+    job_rundir : str #Job run directory. The <JOBID> substring will be replaced by the job index if present
+    xml_spec : bytes #The HadronsXML spec as a bytestring
     grid : Tuple[int,int,int,int]
 
-    def __init__(self, job_subdir, xml : HadronsXML, grid):
-        self.job_subdir = job_subdir
+    def __init__(self, job_rundir, xml : HadronsXML, grid):
+        self.job_rundir = job_rundir
         self.xml_spec = xml.toBytes()
         self.grid = grid
 
@@ -28,7 +33,7 @@ class HadronsJobSpec:
         xml.fromBytes(self.xml_spec)
         xmlstr = xml.toString()
         
-        return f"HadronsJobSpec(job_subdir={self.job_subdir}, xml_spec={xmlstr}, grid={self.grid})"
+        return f"HadronsJobSpec(job_rundir={self.job_rundir}, xml_spec={xmlstr}, grid={self.grid})"
 
     def writeXML(self, filename):
         xml = HadronsXML()
@@ -39,26 +44,36 @@ class HadronsJobSpec:
 @dataclass
 class TransferActionBase:
     pass
-        
+
 @dataclass
 class TransferToAction(TransferActionBase):
-    source_endpoint: str
+    #The <JOBID> substring will be replaced by the job index if present in the path strings
+    source_endpoint: str 
     source_path: str
     machine: str
     dest_path: str
 
     def initiateAction(self, job_id)-> str:
-        return globusCopyToMachine(self.machine, self.dest_path, self.source_endpoint, self.source_path)
+        assert self.machine in globals.remote_workdir
+        source_path = replaceJobIdSubstring(self.source_path, job_id)
+        dest_path = replaceJobIdSubstring(self.dest_path, job_id)
+        
+        return globusCopyToMachine(self.machine, dest_path, self.source_endpoint, source_path)
     
 @dataclass
 class TransferFromAction(TransferActionBase):
+    #The <JOBID> substring will be replaced by the job index if present in the path strings
     machine: str
     source_path: str
     dest_endpoint: str
     dest_path: str
-
+    
     def initiateAction(self, job_id)-> str:
-        return globusCopyFromMachine(self.dest_endpoint, self.dest_path, self.machine, self.source_path)
+        assert self.machine in globals.remote_workdir
+        source_path = replaceJobIdSubstring(self.source_path, job_id)
+        dest_path = replaceJobIdSubstring(self.dest_path, job_id)
+        
+        return globusCopyFromMachine(self.dest_endpoint, dest_path, self.machine, source_path)
     
 @dataclass
 class ComputeActionBase:
@@ -77,7 +92,7 @@ class HadronsComputeAction(ComputeActionBase):
         self.spec.writeXML(xml_file)
         assert self.machine in globals.remote_workdir
         
-        rundir = globals.remote_workdir[self.machine] + "/" + self.spec.job_subdir + f"/{job_id}"
+        rundir = replaceJobIdSubstring(self.spec.job_rundir, job_id)
         print(f"Job {job_id} machine {self.machine} rundir {rundir}")
         return submitHadronsJob(self.machine, xml_file, rundir, self.account, self.queue, self.time, self.spec.grid, self.mpi)
 
@@ -181,7 +196,7 @@ class ActionManager:
         """Blocking wait until the action either completes or fails. Status checks are performed every check_freq seconds. Return the final status."""
         while( (action_status := self.queryStatus(action_id,force_update=True)[0] ) == ActionStatus.ACTIVE):
             time.sleep(check_freq)
-        return status
+        return action_status
 
 class DataTransfers(ActionManager):
     def __init__(self, connection : sqlite3.Connection):
@@ -211,8 +226,9 @@ class ComputeActions(ActionManager):
 
     
 class JobData:
-    def __init__(self, filename: str | None = None):
+    def __init__(self, filename: str | None = None, max_workflows_active=10):
         db_path = ":memory:" if filename is None else str(Path(filename).expanduser())
+        self.max_workflows_active = max_workflows_active
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         
@@ -322,9 +338,26 @@ class JobData:
  
 
 
-    def startWorkflows(self, job_ids : list):
+    def startWorkflows(self, job_ids : list | None = None):
+        """
+        Start the workflows specified by the list of job ids. If None, additional workflows will be started until the total number of active workflows reaches the maximum
+        """
+        if job_ids == None:        
+            with self.conn as conn:
+                count = int(conn.execute("SELECT COUNT(*) FROM jobs WHERE head_action_status = ?", (ActionStatus.ACTIVE.name,) ).fetchone()[0])
+                rem =  self.max_workflows_active - count
+
+                if rem > 0:
+                    toschedule = conn.execute("SELECT job_id FROM jobs WHERE head_action_status = ? ORDER BY job_id ASC LIMIT ?", (ActionStatus.PENDING.name, rem)).fetchall()                   
+                    job_ids = [ j[0] for j in toschedule ]
+                    if len(job_ids) > 0:
+                        print("Number of active workflows",count,"want to activate",rem,"more")
+                        print("Activating",len(job_ids),"workflows with job ids", job_ids)
+                    
         self.progressWorkflows(("VALID_IN",job_ids))
-        
+                        
+
+
     def progressActiveWorkflows(self):
         """
         Find COMPLETE actions and initiate the next stage of the workflow
@@ -369,14 +402,26 @@ class JobData:
         self.progressActiveActions(poll_freq=poll_freq, force_poll=force_poll)
         self.progressActiveWorkflows()
     
+    def countWorkflowsWithStatus(self, statuses : ActionStatus | list[ActionStatus]):
+        with self.conn as conn:
+            if isinstance(statuses, ActionStatus):            
+                return int(conn.execute("SELECT COUNT(*) FROM jobs WHERE head_action_status = ?", (statuses.name,) ).fetchone()[0])
+            elif isinstance(statuses, list):
+                placeholders = ",".join("?" for _ in statuses)
+                names = [s.name for s in statuses]                
+                return int(conn.execute(f"SELECT COUNT(*) FROM jobs WHERE head_action_status IN ({placeholders})", (*names,) ).fetchone()[0])
+            else:
+                raise Exception("Unexpected type for 'statuses'", type(statuses))
+
         
 class JobManager:
-    def __init__(self, filename: str | None = None, poll_freq=30):
+    def __init__(self, filename: str | None = None, poll_freq=30, max_workflows_active=10):
         """
         poll_freq: how often the action monitors poll the API for status updates
+        max_workflows_active: if >0, the manager will attempt to maintain this many active workflows, activating more when others finish; if 0, they must be activated manually
         """
         
-        self.job_data = JobData(filename)
+        self.job_data = JobData(filename, max_workflows_active=max_workflows_active)
         self._stop = threading.Event()
         self._thread = None
         self._lock = threading.Lock()
@@ -389,7 +434,19 @@ class JobManager:
         self._thread = threading.Thread(target=self._run)
         self._thread.start()
 
-    def stop(self):
+    def stop(self, wait_until_done=True):
+        """
+        Ask the manager thread to stop and wait until it does.
+        wait_until_done : block until there are no more active or pending workflows before stopping (default True)
+        """
+        def __nincomplete():
+            with self._lock:
+                return self.job_data.countWorkflowsWithStatus([ ActionStatus.PENDING, ActionStatus.ACTIVE ])
+        
+        if wait_until_done:
+            while(__nincomplete() > 0):
+                time.sleep(2)
+        
         self._stop.set()
 
         if self._thread is not None:
@@ -399,7 +456,7 @@ class JobManager:
         self._lock.acquire()
         
         while not self._stop.is_set():
-            #A safe checkpoint for allowing the user to modify the state
+            #A safe checkpoint for allowing the user to obtain a lock and modify the state (e.g. manually activating workflows, restarting after failure, etc)
             self._lock.release()
             time.sleep(0.5)
             self._lock.acquire()
@@ -407,7 +464,8 @@ class JobManager:
             if self._stop.is_set():
                 break
 
-            self.job_data.progressActiveState(poll_freq=self.poll_freq)
+            self.job_data.startWorkflows() #start new workflows as required
+            self.job_data.progressActiveState(poll_freq=self.poll_freq) #attempt to progress active workflows
             time.sleep(2)
         self._lock.release()
 
@@ -418,3 +476,17 @@ class JobManager:
         with self._lock:
             return op_lambda(self.job_data)
         
+    def __enter__(self):
+        """
+        Allow the user to acquire a lock on the database for manipulation using 'with'
+        """
+        self._lock.acquire()
+        return self.job_data
+        
+    def __exit__(self,exc_type, exc_val, exc_tb):
+        self._lock.release() #unlock before exception!
+        if exc_type:
+            raise Exception("Caught exception",exc_type,exc_val,exc_tb)
+            
+
+    

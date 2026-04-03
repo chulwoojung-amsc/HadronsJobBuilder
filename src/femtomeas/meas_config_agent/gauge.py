@@ -13,6 +13,7 @@ from langchain.agents import create_agent
 from langchain.tools import tool, ToolRuntime
 from langgraph.store.memory import InMemoryStore
 
+import os
 import json
 from .common import *
 from .hadrons_xml import HadronsXML
@@ -20,18 +21,43 @@ from .hadrons_xml import HadronsXML
 class LoadGauge(BaseModel):
     """Load NERSC-format gauge configurations. If the user provides a range, infer from it the start, step and end."""
     type: Literal["gauge-load"] = "gauge-load"
+    source_uuid :  str | None = Field(..., description="A Globus endpoint UUID containing the configurations. If the path is local, set the value to None.")
     stub : str = Field(...,description="The path stub of the configurations. A period followed by the configuration index will be appended during the run. If the user provides a complete path including an index (or variable_, remove the period and index")
     start : int = Field(...,description="The index of the first configuration")
     step : int = Field(...,description="The increment between successive configurations")
     end : int = Field(...,description="The index of the last configuration")
-
+    
     def setXML(self,xml):
         opt = xml.addModule("gauge","MIO::LoadNersc")
         HadronsXML.setValue(opt, "file", self.stub)
         xml.setTrajCounter(self.start, self.end, self.step)
-                            
 
-    
+    def setXMLsingle(self,xml,job_index, override_path = None  ):
+        """
+        Output the XML just for a single configuration.
+        job_index : The index of the entry in the range, i.e. 0 -> start, 1 -> start+step,  etc
+        override_path : Replace the path in which the file resides, e.g. if it was moved prior to execution
+        """
+        
+        stub = self.stub
+        if override_path != None:
+            stub = os.path.join(override_path,  os.path.basename(self.stub) )
+        ckpoint_idx = self.start + job_index * self.step
+        if ckpoint_idx > end:
+            raise Exception("Configuration index is out of range")           
+        
+        opt = xml.addModule("gauge","MIO::LoadNersc")
+        HadronsXML.setValue(opt, "file", stub)
+        xml.setTrajCounter(ckpoint_idx, ckpoint_idx, 1)
+
+        
+    def getJobConfigurationsAndSource(self):
+        """
+        Return a list of configuration filenames required for the job and the source endpoint ID. If no actual file is required return a suitable sized list of None for the first argument. If the files are local or no files are required, return None for the second argument.
+        """
+        return [ stub + f".{i}" for i in range(start, end+step, step) ], self.source_uuid
+
+        
 class UnitGauge(BaseModel):
     """Use a unit gauge configuration"""
     type: Literal["gauge-unit"] = "gauge-unit"
@@ -39,6 +65,17 @@ class UnitGauge(BaseModel):
     def setXML(self,xml):
         xml.addModule("gauge","MGauge::Unit")
         xml.setTrajCounter(0,1,1)
+
+    def setXMLsingle(self,xml,job_index, override_path = None  ):
+        self.setXML(xml)
+
+    def getJobConfigurationsAndSource(self):
+        """
+        Return a list of configuration filenames required for the job and the source endpoint ID. If no actual file is required return a suitable sized list of None for the first argument. If the files are local or no files are required, return None for the second argument.
+        """
+        return [ None ], None
+
+
         
 class RandomGauge(BaseModel):
     """Use a random gauge configuration"""
@@ -46,7 +83,17 @@ class RandomGauge(BaseModel):
     def setXML(self,xml):
         xml.addModule("gauge","MGauge::Random")
         xml.setTrajCounter(0,1,1)
-    
+
+    def setXMLsingle(self,xml,job_index, override_path = None  ):
+        self.setXML(xml)
+
+    def getJobConfigurationsAndSource(self):
+        """
+        Return a list of configuration filenames required for the job and the source endpoint ID. If no actual file is required return a suitable sized list of None for the first argument. If the files are local or no files are required, return None for the second argument.
+        """
+        return [ None ], None
+        
+        
 class GaugeFieldConfig(BaseModel):
     config: Union[LoadGauge,UnitGauge,RandomGauge] = Field(
         ..., description="Information about the gauge configuration(s) that will be computed upon.", discriminator='type'
@@ -54,6 +101,21 @@ class GaugeFieldConfig(BaseModel):
     def setXML(self,xml):
         self.config.setXML(xml)
 
+    def setXMLsingle(self,xml,job_index, override_path = None  ):
+        """
+        Output the XML just for a single configuration.
+        job_index : The index of the entry in the range, i.e. 0 -> start, 1 -> start+step,  etc
+        override_path : Replace the path in which the file resides, e.g. if it was moved prior to execution
+        """       
+        self.config.setXMLsingle(xml, job_index, override_path)
+
+    def getJobConfigurationsAndSource(self):
+        """
+        Return a list of configuration filenames required for the job and the source endpoint ID. If no actual file is required return a suitable sized list of None for the first argument. If the files are local or no files are required, return None for the second argument.
+        """
+        return self.config.getJobConfigurationsAndSource()
+        
+        
 
 def identifyGaugeConfigs(model, user_interactions: list[BaseMessage]) -> GaugeFieldConfig:
     #This version uses the default structured output strategy
@@ -64,7 +126,7 @@ You are an assistant responsible for identifying the lattice QCD propagator gaug
 Your workflow:
 1. Identify based on user input whether the user wishes to use a unit or random gauge field, or else load one or more gauge configurations, and create the corresponding data structure. If the choice can be inferred based on previous user messages, you must ask the user to confirm your choice. If it cannot, or there is any ambiguity, you must ask the user.    
 2. Populate the parameters of the data structure. If a parameter value is unknown you must ask the user; never guess parameters.
-
+3. If loading gauge configurations, determine whether the configuration files are local or remote. If remote, a Globus endpoint must be provided and entered into the source_uuid field; if local, this field should be set to None. Note that we are using NERSC's SuperFacility API to initiate these transfers, which also accepts special UUIDs "dtn", "hpss" or "perlmutter" in place of regular ID strings.
     
 User Query rules:
 - Use the getUserInput tool

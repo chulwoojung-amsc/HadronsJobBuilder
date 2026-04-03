@@ -1,0 +1,7 @@
+*~
+*.xml
+*.bak*
+*.db
+*.txt
+*__pycache__*
+*.egg-info*

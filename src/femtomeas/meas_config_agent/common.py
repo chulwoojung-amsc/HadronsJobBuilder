@@ -26,48 +26,23 @@ def storeListAppend(key, value, store):
     store.put(("ns",), key, ll)
 
 
-use_auto_eval = False    
-auto_eval_messages = None
-auto_eval_ostrm = None  
-auto_eval_model = None
-auto_eval_sys = None
+##Chatbot IO controls
+def cmdlinePrint(*args, **kwargs):
+    print(*args, *kwargs)
+def cmdlineInput(query):
+    return input(query + " : ").strip()
 
-def enableAutoEvaluate(model, sys):
-    global use_auto_eval
-    global auto_eval_model
-    global auto_eval_sys
-    global auto_eval_messages
-    global auto_eval_ostrm
-    use_auto_eval = True
-    auto_eval_model = model
-    auto_eval_sys = sys
-    auto_eval_ostrm = io.StringIO()
-    auto_eval_messages = []
-    
+#Control which functions are used for text input and output to the chatbot
+print_func = cmdlinePrint
+input_func = cmdlineInput
+   
 def Print(*args, **kwargs):
-    if use_auto_eval == True:
-        global auto_eval_ostrm
-        print(*args, *kwargs, file=auto_eval_ostrm)
-    else:
-        print(*args, *kwargs)
+    global print_func
+    print_func(*args, *kwargs)
         
 def Input(query):
-    if use_auto_eval == True:
-        global auto_eval_ostrm
-        global auto_eval_messages
-        auto_eval_messages.append(HumanMessage(auto_eval_ostrm.getvalue()))
-        auto_eval_ostrm.close()
-        auto_eval_ostrm = io.StringIO()
-
-        auto_eval_messages.append(HumanMessage(query))
-        print("TO EVAL AGENT:", auto_eval_messages[-2].content,"\n",auto_eval_messages[-1].content)
-        
-        msg = [ SystemMessage(auto_eval_sys) ] + auto_eval_messages 
-        ret = auto_eval_model.invoke(msg).content
-        print("EVAL AGENT RESPONSE:", ret)
-        return ret
-    else:        
-        return input(query + " : ").strip()
+    global input_func
+    return input_func(query)
 
         
 @tool

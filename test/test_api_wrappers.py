@@ -5,19 +5,135 @@ import time
 import stat
 import os
 import json
-from femtomeas.workflow_manager.iri_api import executeBatchJobTest
+from femtomeas.workflow_manager.manager_config import readManagerConfig
+import sys
 
-key_path = os.getenv("NERSC_SFAPI_KEY_PATH")
-if key_path == None:
-    raise Exception("Expect environment variable NERSC_SFAPI_KEY_PATH")
+def hadronsXMLexample(output_file):
+    with open(output_file, 'w') as f:
+        f.write("""<?xml version='1.0' encoding='us-ascii'?>
+<grid>
+  <parameters>
+    <trajCounter>
+      <start>0</start>
+      <end>1</end>
+      <step>1</step>
+    </trajCounter>
+    <database>
+      <applicationDb>app.db</applicationDb>
+      <resultDb>results.db</resultDb>
+      <restoreModules>false</restoreModules>
+      <restoreMemoryProfile>false</restoreMemoryProfile>
+      <restoreSchedule>false</restoreSchedule>
+      <statDbBase>stats.db</statDbBase>
+      <statDbPeriodMs>1000</statDbPeriodMs>
+      <statDbAllRanks>false</statDbAllRanks>
+    </database>
+    <genetic>
+      <popSize>20</popSize>
+      <maxGen>100</maxGen>
+      <maxCstGen>100</maxCstGen>
+      <mutationRate>0.1</mutationRate>
+    </genetic>
+    <graphFile />
+    <scheduleFile />
+    <saveSchedule>false</saveSchedule>
+    <parallelWriteMaxRetry>-1</parallelWriteMaxRetry>
+    <runId>1234</runId>
+  </parameters>
+  <modules>
+    <module>
+      <id>
+        <name>gauge</name>
+        <type>MGauge::Unit</type>
+      </id>
+      <options />
+    </module>
+    <module>
+      <id>
+        <name>DWF_Ls12_M51.8_m0.01</name>
+        <type>MAction::DWF</type>
+      </id>
+      <options>
+        <gauge>gauge</gauge>
+        <Ls>12</Ls>
+        <mass>0.01</mass>
+        <M5>1.8</M5>
+        <boundary>1 1 1 -1</boundary>
+        <twist>0. 0. 0. 0.</twist>
+      </options>
+    </module>
+    <module>
+      <id>
+        <name>DWF_Ls12_M51.8_m0.01_wall_t0</name>
+        <type>MSource::Wall</type>
+      </id>
+      <options>
+        <tW>0</tW>
+        <mom>0. 0. 0. 0.</mom>
+      </options>
+    </module>
+    <module>
+      <id>
+        <name>solver_DWF_Ls12_M51.8_m0.01_1e-8</name>
+        <type>MSolver::RBPrecCG</type>
+      </id>
+      <options>
+        <action>DWF_Ls12_M51.8_m0.01</action>
+        <maxIteration>10000</maxIteration>
+        <residual>1e-08</residual>
+        <guesser />
+      </options>
+    </module>
+    <module>
+      <id>
+        <name>prop_solver_DWF_Ls12_M51.8_m0.01_1e-8_DWF_Ls12_M51.8_m0.01_wall_t0</name>
+        <type>MFermion::GaugeProp</type>
+      </id>
+      <options>
+        <source>DWF_Ls12_M51.8_m0.01_wall_t0</source>
+        <solver>solver_DWF_Ls12_M51.8_m0.01_1e-8</solver>
+      </options>
+    </module>
+    <module>
+      <id>
+        <name>point_sink_zerop</name>
+        <type>MSink::ScalarPoint</type>
+      </id>
+      <options>
+        <mom>0. 0. 0.</mom>
+      </options>
+    </module>
+    <module>
+      <id>
+        <name>pion2pt_1</name>
+        <type>MContraction::Meson</type>
+      </id>
+      <options>
+        <q1>prop_solver_DWF_Ls12_M51.8_m0.01_1e-8_DWF_Ls12_M51.8_m0.01_wall_t0</q1>
+        <q2>prop_solver_DWF_Ls12_M51.8_m0.01_1e-8_DWF_Ls12_M51.8_m0.01_wall_t0</q2>
+        <gammas>(Gamma5 Gamma5)</gammas>
+        <sink>point_sink_zerop</sink>
+        <output>pion2pt_1.out</output>
+      </options>
+    </module>
+  </modules>
+</grid>""")
+
+
+
+
+
+if len(sys.argv) == 1:
+    raise Exception("Must provide the manager configuration JSON")
+
+readManagerConfig(sys.argv[1])
 
 machine = "Perlmutter"
-safe_dir = "/global/cfs/cdirs/mp13/ckelly/agent_safe_dir" #home is mounted read-only on PM
-setupWorkflowAgent(key_path, { machine : safe_dir }  )
-
+safe_dir = globals.remote_workdir[machine]
 print("Machine",machine, "is up?:", queryMachineStatus(machine))
 
 if 0:
+    print("TESTING BATCH JOB SUBMISSION")
     jobid = executeBatchJobCompat(machine, '''echo -e '#!/bin/bash\necho "Hello from ${SLURM_PROCID}"' > script.sh
     chmod u+x script.sh
     srun -n 4 ./script.sh
@@ -76,30 +192,10 @@ if 0:
     ret = remoteMkdirUnsafe(machine, safe_dir + "/1/2")
     assert ret == 1 or ret == 2
 
-setHadronsInfo({ "Perlmutter" : { "bin" : "/global/u2/c/ckelly/CPS/install_mpi_pm_new/Hadrons_pm_new/bin",    "env" : "source /global/u2/c/ckelly/CPS/bld/grid_pm_develop/sourceme.sh" } } )
-#validateHadronsXML(machine, "hadrons_run.xml")
-
-if 0:
-    remoteMkdir(machine, safe_dir)
-    uploadSmallFile(machine, safe_dir + "/run.xml", "hadrons_run.xml")
-
-    script = f"""#!/bin/bash
-    #SBATCH -C gpu
-    #SBATCH -A mp13_g
-    #SBATCH -q debug
-    #SBATCH -N 1
-    #SBATCH -G 1
-    #SBATCH -t 5
-    #SBATCH -o {safe_dir}/test_run.log
-
-    source /global/u2/c/ckelly/CPS/bld/grid_pm_develop/sourceme.sh
-    cd ${{SCRATCH}} #SQLite DB is apparently not writeable on compute nodes!?
-    srun -n 1 /global/u2/c/ckelly/CPS/install_mpi_pm_new/Hadrons_pm_new/bin/HadronsXmlRun {safe_dir}/run.xml --mpi 1.1.1.1 --grid 8.8.8.8
-    """
-
-    print(script)
-    jobid = executeBatchJob(machine, script)
-
+if 1:
+    hadronsXMLexample("hadrons_run.xml")
+    print("TESTING HADRONS JOB SUBMISSION 1 RANKS, 1 NODE" )
+    jobid = submitHadronsJob(machine, "hadrons_run.xml", f"{safe_dir}/test_job", "mp13_g", "debug", "5", (8,8,8,8), (1,1,1,1))
     while(1):
         state = getJobState(machine, jobid)
         print(state)
@@ -108,7 +204,10 @@ if 0:
             break    
         time.sleep(10)
 
-if 0:        
+    
+if 0:
+    hadronsXMLexample("hadrons_run.xml")
+    print("TESTING HADRONS JOB SUBMISSION 4 RANKS, 1 NODE" )
     jobid = submitHadronsJob(machine, "hadrons_run.xml", f"{safe_dir}/test_job", "mp13_g", "debug", "5", (16,16,8,8), (2,2,1,1))
     while(1):
         state = getJobState(machine, jobid)
@@ -121,7 +220,7 @@ if 0:
 if 0:
     print(globusTransferStatus(machine, "1234"))
         
-if 1:
+if 0:
     tid = globusCopyToMachine(machine, safe_dir, "dtn", "/global/cfs/cdirs/mp13/ckelly/globus_source_test_dir", block_until_complete=True)
     for i in range(10):
         print(globusTransferStatus(machine, tid))

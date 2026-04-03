@@ -8,7 +8,8 @@ dependencies = [
   "langchain",
   "langchain_openai",
   "pathlib",
-  "sfapi_client"
+  "sfapi_client",
+  "globus_sdk"
 ]
 
 [tool.setuptools]
