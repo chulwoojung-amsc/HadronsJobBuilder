@@ -19,9 +19,9 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
 
     if state.observables == None:
         Print("""
-======================
-IDENTIFY OBSERVABLES
-======================
+---        
+## IDENTIFY OBSERVABLES
+---
         """)       
         state.observables = identifyObservables(model, messages).observables
         checkpointState(state,ckpoint_file)
@@ -31,9 +31,9 @@ IDENTIFY OBSERVABLES
 
     if state.actions == None:
         Print("""
-======================
-ACTIONS
-======================
+---
+## ACTIONS
+---
         """)       
         state.actions = identifyActions(model, messages).actions
         checkpointState(state,ckpoint_file)
@@ -44,9 +44,9 @@ ACTIONS
 
     if state.sources == None:
         Print("""
-======================
-SOURCES
-======================
+---
+## SOURCES
+---
         """)
         state.sources = identifySources(model, state, messages).sources
         checkpointState(state,ckpoint_file)
@@ -54,9 +54,9 @@ SOURCES
 
     if state.eigensolvers == None:
         Print("""
-======================
-EIGENSOLVERS
-======================
+---
+## EIGENSOLVERS
+---
         """) 
         state.eigensolvers = setupEigenSolvers(model, state, messages).solvers
         checkpointState(state,ckpoint_file)
@@ -66,9 +66,9 @@ EIGENSOLVERS
         
     if state.solvers == None:
         Print("""
-======================
-SOLVERS
-======================
+---
+## SOLVERS
+---
         """) 
         state.solvers = identifySolvers(model, state, messages).solvers
         checkpointState(state,ckpoint_file)
@@ -79,9 +79,9 @@ SOLVERS
 
     if state.propagators == None:
         Print("""
-======================
-PROPAGATORS
-======================
+---
+## PROPAGATORS
+---
         """) 
         state.propagators = identifyPropagators(model, state, messages).propagators
         checkpointState(state,ckpoint_file)
@@ -91,18 +91,18 @@ PROPAGATORS
     if state.observable_configs == None:
                 
         Print("""
-======================
-OBSERVABLE CONFIGURATIONS
-======================
+---
+## OBSERVABLE CONFIGURATIONS
+---
         """)
         state.observable_configs = configureObservables(model, state, messages).observable_configs
         checkpointState(state,ckpoint_file)
 
     if state.gauge == None:
         Print("""
-======================
-GAUGE CONFIGURATIONS
-======================
+---
+## GAUGE CONFIGURATIONS
+---
         """)
         state.gauge = identifyGaugeConfigs(model, messages)
         checkpointState(state,ckpoint_file)

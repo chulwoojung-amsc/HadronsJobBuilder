@@ -203,9 +203,8 @@ Your output must be in JSON format and adhere to the following schema:
             continue       
         
         #Human validation
-        Print("Obtained", len(obj.solvers), "eigensolvers")
-        for r in obj.solvers:
-            Print(r)
+        output = f"Obtained {len(obj.solvers)} eigensolvers\n" + prettyPrintPydantic(obj.solvers)
+        Print(output)
 
         accepted = queryYesNo("Is this correct?")
         if(accepted == False):

@@ -34,16 +34,16 @@ class ObservablesInfo(BaseModel):
     observables: List[ObservableInfo] = Field(...,description="The list of observables")
 
 def identifyObservables(model, user_interactions: list[BaseMessage]) -> ObservablesInfo:
-    """
-    Parse the list of messages to identify a list of observable keys and their associated information
-    """
+   """
+   Parse the list of messages to identify a list of observable keys and their associated information
+   """
     
-    sys = """
-    Reasoning: high
+   sys = """
+   Reasoning: high
     
-    You are an assistant responsible for identifying all lattice QCD observables the user wants to compute, and extracting only the information explicitly provided by the user that is relevant to computing each observable.
+   You are an assistant responsible for identifying all lattice QCD observables the user wants to compute, and extracting only the information explicitly provided by the user that is relevant to computing each observable.
 
-You will receive the user’s original request and a conversation history between the user and other agents. Your task is to read only this content and produce a structured list of observables. Do not invent, infer, or assume any information that is not explicitly stated by the user.
+You will receive the user’s original request. Your task is to read only this content and produce a structured list of observables. Do not invent, infer, or assume any information that is not explicitly stated by the user.
 
 For each observable mentioned by the user:
 
@@ -63,18 +63,17 @@ You can output the same observable information for multiple entries but only if 
 Your list must include every observable explicitly mentioned, and only those observables. Do not invent observables, do not combine observables unless the user explicitly describes them as the same, and do not add details that are not explicitly provided by the user.
 """
 
-    accepted = False
-    obj = None
-    while(accepted == False):
-        obj = callModelWithStructuredOutput(model, sys, user_interactions, ObservablesInfo, True)
+   accepted = False
+   obj = None
+   while(accepted == False):
+      obj = callModelWithStructuredOutput(model, sys, user_interactions, ObservablesInfo, True)
 
-        Print("Obtained", len(obj.observables), "observables")
-        for r in obj.observables:
-            Print(r)
+      output = f"Obtained {len(obj.observables)} observables:\n" + prettyPrintPydantic(obj.observables)
+      Print(output)
             
-        accepted = queryYesNo("Is this correct?")
-        if(accepted == False):
-            reason = Input("Explain what is wrong: ")
-            user_interactions.append(HumanMessage(f"Your previous response was not accepted for the following reason: {reason}"))            
-    return obj
-    
+      accepted = queryYesNo("Is this correct?")
+      if(accepted == False):
+         reason = Input("Explain what is wrong: ")
+         user_interactions.append(HumanMessage(f"Your previous response was not accepted for the following reason: {reason}"))            
+   return obj
+ 

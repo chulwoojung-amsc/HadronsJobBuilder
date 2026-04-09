@@ -12,6 +12,8 @@ import json
 import io
 import re
 
+from .print_pydantic_markdown import pydantic_to_markdown
+
 def storeGetList(key, store):
     l = store.get( ("ns",),key)
     if l == None:
@@ -32,6 +34,9 @@ def cmdlinePrint(*args, **kwargs):
 def cmdlineInput(query):
     return input(query + " : ").strip()
 
+output_style = "plain" #supports markdown for prettier printing
+
+
 #Control which functions are used for text input and output to the chatbot
 print_func = cmdlinePrint
 input_func = cmdlineInput
@@ -44,6 +49,24 @@ def Input(query):
     global input_func
     return input_func(query)
 
+
+def prettyPrintPydantic(instance)->str:
+    global output_style
+    if output_style == "plain":
+        if isinstance(instance, list):
+            out = ""
+            for i, r in enumerate(instance):
+                out = out+str(r)
+                if i != len(instance)-1:
+                    out = out + "\n"
+            return out
+        else:
+            return str(instance) #default repr 
+    elif output_style == "markdown":
+        #sval = f"```json\n{instance.model_dump_json(indent=4)}\n```"
+        return pydantic_to_markdown(instance, mode="table")
+    else:
+        assert 0
         
 @tool
 def getUserInput(query: str) -> str:

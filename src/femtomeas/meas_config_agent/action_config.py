@@ -57,7 +57,67 @@ class ActionConfig(BaseModel):
     
 class ActionsConfig(BaseModel):
     actions: List[ActionConfig] = Field(...,description="The list of action instances")
-   
+
+
+def identifyActions(model, user_interactions: list[BaseMessage]) -> ActionsConfig:
+    """
+    Parse the list of messages to identify a list of actions and their associated parameters
+    """
+
+    sys = """
+You are an assistant responsible for identifying all lattice QCD action instances required to compute the propagators required for the calculation, based solely on user input.
+
+Action instances are parameterized by ActionConfig structures. Your workflow is:
+1) Ask the user to specify which action type or types they want to use. Typically a single action type is used for all propagators so you should phrase your question as if they will select just one of the options, but explain in parentheses that they are able to choose different actions if desired. In this question, *do not* list the parameters associated with those action types.
+2) Identify the set of action instances required for the calculation according to the rules below.
+3) Instantiate an ActionConfig instance for each
+4) populate the parameters in conjunction with the user
+5) insert it into the ActionsConfig.actions list.
+
+Action instance rules:
+- Each action instance has an action type (e.g. DWF, WilsonClover) along with a set of parameters including the quark mass. When you instantiate the ActionConfig instance you will need to identify the corresponding dataclass to put in the ActionConfig.action field.
+- Create a separate entry for each unique collection of parameters, for example, if the user specifies DWF propagators with Ls=12, M5=1.8 and masses of 0.03 and 0.05, create two separate action instances with different mass values.    
+- Create a separate entry for each action instance, even if the action appears multiple times with different parameters.
+- Your list must include every action instance explicitly mentioned, and only those. Do not invent instances. do not combine instances unless the user explicitly describes them as the same.
+- For the 'user_info' field, summarize any information relevant to what observables/propagators this action will be used for provided by the user. It is important that any positional information about the propagator be included, for example whether it is the first or second propagator of a two-point function, or if it is a 'spectator' quark in a baryon. If the user does now specify any details, use an empty string. For example, if the user specifies that this action will be used for light quark propagators, enter "use for all light quark propagators" in user_info.
+- You must also assign a unique tag/name to the instance via the ActionConfig.name field. Never use the same tag for different instances. The tag should include the action name and enough of the parameter values to uniquely distinguish it among the other action instances, prefering shorter tags if possible.
+
+User Query rules:
+- Use the getUserInput tool to ask questions of the user
+- If the user responds to a query with an invalid response, repeat the query until a valid response is provided. Never accept an invalid response.
+- Instead of answering your question, the user might respond to your query with a question. If this occurs, answer the user's question using provideInformationToUser tool and ensure the user is satisfied with a follow-up call to getUserInput. Once satisfied, repeat the original question.
+
+
+Your output must be in JSON format and adhere to the following schema:    
+""" + json.dumps(ActionsConfig.model_json_schema())  ##appears necessary to also include the schema in the prompt else it hallucinates valid actions and does not validate
+    
+    accepted = False
+    obj = None
+    while(accepted == False):
+        agent = create_agent(model=model, tools=[getUserInput,provideInformationToUser,addDWFaction,addWilsonCloverAction], system_prompt=sys, response_format=ActionsConfig)
+        
+        resp = agent.invoke({ "messages": user_interactions },     {"configurable": {"thread_id": "1"}})
+        obj = resp["structured_response"]
+
+        output = f"Obtained {len(obj.actions)} action instances\n" + prettyPrintPydantic(obj.actions)
+        Print(output)
+        
+        accepted = queryYesNo("Is this correct?")
+        if(accepted == False):
+            reason = Input("Explain what is wrong: ")
+            user_interactions.append(HumanMessage(f"Your previous response was not accepted for the following reason: {reason}"))            
+    return obj
+
+
+
+
+
+
+
+
+
+################## Manual implementation of tools wrapping structures. This is needed when the LLM provider structured output strategy is broken (deprecated)
+    
 @tool
 def addDWFaction(name: str, user_info: str, Ls: int, mass: float, M5: float, runtime: ToolRuntime) -> None:
     """Add an instance of the Domain-Wall fermion (DWF) action to the list of action instances
@@ -84,7 +144,7 @@ def addWilsonCloverAction(name: str, user_info: str, mass: float, csw_r: float, 
     
        
     
-def identifyActions(model, user_interactions: list[BaseMessage]) -> ActionsConfig:
+def identifyActionsUsingTools(model, user_interactions: list[BaseMessage]) -> ActionsConfig:
     """
     Parse the list of messages to identify a list of actions and their associated parameters
     """
@@ -120,10 +180,8 @@ User Query rules:
         
         resp = agent.invoke({ "messages": user_interactions },     {"configurable": {"thread_id": "1"}})
 
-        #print(resp)
-
         obj = ActionsConfig(actions = storeGetList("actions",store))
-        
+
         Print("Obtained", len(obj.actions), "action instances")
         for r in obj.actions:
             Print(r)

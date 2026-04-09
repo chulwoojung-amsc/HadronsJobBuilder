@@ -9,7 +9,14 @@ dependencies = [
   "langchain_openai",
   "pathlib",
   "sfapi_client",
-  "globus_sdk"
+  "globus_sdk",
+  "dash",
+  "dash-chat",
+  "dash-bootstrap-components",
+  "dash-extensions",
+  "dash-ag-grid",
+  "fastapi",
+  "uvicorn"
 ]
 
 [tool.setuptools]
