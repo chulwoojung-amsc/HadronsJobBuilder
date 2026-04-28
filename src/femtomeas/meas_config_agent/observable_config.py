@@ -18,6 +18,11 @@ def mesonModuleXML(name, xml, gammas_snk_src: str, q1 : str, q2 : str):
 
     HadronsXML.setValues(opt, [ ("q1", q1), ("q2", q2), ("gammas", gammas_snk_src), ("sink", "point_sink_zerop"), ("output",f"{name}.out") ])
 
+def baryonModuleXML(name, xml, gammas_snk_src: str, q1 : str, q2 : str, q3 : str):
+    opt = xml.addModule(name, "MContraction::Baryon")
+
+    HadronsXML.setValues(opt, [ ("q1", q1), ("q2", q2), ("q3", q3), ("gammas", gammas_snk_src), ("sink", "point_sink_zerop"), ("output",f"{name}.out") ])
+
 def validateProps(prop_names, state):
     for p in prop_names:
         if not state.isValidPropagator(p):
@@ -52,11 +57,22 @@ class Vector2ptConfig(BaseModel):
 
     def validate(self, state):
         return validateProps(self.propagators, state)
-   
+
+class Nucleon2ptConfig(BaseModel):
+    """An instance of the nucleon two-point function calculation."""
+    type: Literal["nucleon2pt"] = "nucleon2pt"
+    propagators : tuple[str,str,str] = Field(..., description="The tags of the three propagators used to compute the observable")
+
+    def setXML(self, name, xml):
+        baryonModuleXML(name, xml, "(CG5 CG5)", self.propagators[0], self.propagators[1], self.propagators[2])
+
+    def validate(self, state):
+        return validateProps(self.propagators, state)
+
 class ObservableConfig(BaseModel):
     """An instance of an observable."""
     name: str = Field(..., description="The name/tag of the observable instance")        
-    obs: Union[Pion2ptConfig,Vector2ptConfig] = Field(...,description="The observation instance and configuration.", discriminator='type')
+    obs: Union[Pion2ptConfig,Vector2ptConfig,Nucleon2ptConfig] = Field(...,description="The observation instance and configuration.", discriminator='type')
 
     def setXML(self, xml):
         self.obs.setXML(self.name, xml)

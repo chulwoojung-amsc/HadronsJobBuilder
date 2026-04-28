@@ -21,10 +21,16 @@ class Vector2ptObs(BaseModel):
    type: Literal["vector2pt"] = "vector2pt"
    n_propagator: Literal[2] = Field(2, description="The required number of propagators")
    obs_info: Literal[""] = Field("", description="General information about this observable")
-   
+
+class Nucleon2ptObs(BaseModel):
+   """The nucleon two-point function. This observable involves a contraction of three propagators, which may be the same."""
+   type: Literal["nucleon2pt"] = "nucleon2pt"
+   n_propagator: Literal[3] = Field(3, description="The required number of propagators")
+   obs_info: Literal[""] = Field("", description="General information about this observable")
+
 class ObservableInfo(BaseModel):
    """Information about an observable to be computed."""
-   obs_type: Union[Pion2ptObs,Vector2ptObs] = Field(...,description="The observation type and important knowledge.", discriminator="type")
+   obs_type: Union[Pion2ptObs,Vector2ptObs,Nucleon2ptObs] = Field(...,description="The observation type and important knowledge.", discriminator="type")
    user_info: str = Field(...,description="Any relevant information obtained from the user regarding the observable, such as "
                      "propagator masses, momenta, source/sink smearing, etc. "
                      "Use an empty string if no extra information is given.")
