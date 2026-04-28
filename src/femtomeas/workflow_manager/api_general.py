@@ -2,10 +2,11 @@ import pathlib
 import io
 import time
 from . import globals
+from .logging import wfapiLog
 
 if globals.api_impl == "IRI":
     print("Using IRI API")
-    from .iri_api import setupWorkflowAgent, remoteLs, remoteMkdir, uploadBytes, executeBatchJobCompat, remoteChmod, getJobState, cancelJob, queryMachineStatus, globusTransferStatus, globusCopyToMachine, globusCopyFromMachine
+    from .iri_api import setupWorkflowAgent, remoteLs, remoteMkdir, uploadBytes, executeBatchJobCompat, remoteChmod, getJobState, cancelJob, queryMachineStatus, globusTransferStatus, globusCopyToMachine, globusCopyFromMachine, getUserAccountProjects, getKnownMachines, getMachineQueues, remoteRun, downloadFile
     #from .iri_api import known_machines
 elif globals.api_impl == "SF":
     print("Using Superfacility API")
@@ -13,7 +14,7 @@ elif globals.api_impl == "SF":
     #from .sfapi import known_machines
 elif globals.api_impl == "SPOOF":
     print("Using Spoof API")
-    from .spoof_api import setupWorkflowAgent, remoteMkdir, uploadBytes, executeBatchJobCompat, getJobState, globusTransferStatus, globusCopyToMachine, globusCopyFromMachine
+    from .spoof_api import setupWorkflowAgent, remoteMkdir, uploadBytes, executeBatchJobCompat, getJobState, globusTransferStatus, globusCopyToMachine, globusCopyFromMachine, queryMachineStatus, getUserAccountProjects, getKnownMachines, getMachineQueues, remoteRun, downloadFile
 else:
     raise Exception("Unknown API implementation")
 
@@ -40,6 +41,7 @@ def uploadSmallFile(machine: str, remote_path: str, local_path: str, allow_unsaf
     Return:
        True if successful, False otherwise
     """
+    wfapiLog(f"Uploading small file {local_path} to {machine}:{remote_path}")
     with open(local_path, "rb") as fh:
         return uploadBytes(machine, remote_path, io.BytesIO( fh.read() ) )
 

@@ -91,6 +91,9 @@ def queryYesNo(query: str)->bool:
     result = ""
     while(result not in ["y","n"]):    
         result = Input(query + " [y/n]")
+        print("QUERY YES/NO RECEIVED",result,"VALID ?", result in ["y","n"] )
+
+    print("QUERY YES/NO GOT VALID RESPONSE")
     return True if result == "y" else False
         
 

@@ -43,7 +43,7 @@ class LoadGauge(BaseModel):
         if override_path != None:
             stub = os.path.join(override_path,  os.path.basename(self.stub) )
         ckpoint_idx = self.start + job_index * self.step
-        if ckpoint_idx > end:
+        if ckpoint_idx > self.end:
             raise Exception("Configuration index is out of range")           
         
         opt = xml.addModule("gauge","MIO::LoadNersc")
@@ -55,7 +55,7 @@ class LoadGauge(BaseModel):
         """
         Return a list of configuration filenames required for the job and the source endpoint ID. If no actual file is required return a suitable sized list of None for the first argument. If the files are local or no files are required, return None for the second argument.
         """
-        return [ stub + f".{i}" for i in range(start, end+step, step) ], self.source_uuid
+        return [ self.stub + f".{i}" for i in range(self.start, self.end+self.step, self.step) ], self.source_uuid
 
         
 class UnitGauge(BaseModel):
@@ -98,6 +98,11 @@ class GaugeFieldConfig(BaseModel):
     config: Union[LoadGauge,UnitGauge,RandomGauge] = Field(
         ..., description="Information about the gauge configuration(s) that will be computed upon.", discriminator='type'
     )
+    Lx : int = Field(..., description="The lattice size in the x-direction in dimensionless (lattice) units.")
+    Ly : int = Field(..., description="The lattice size in the y-direction in dimensionless (lattice) units.")
+    Lz : int = Field(..., description="The lattice size in the z-direction in dimensionless (lattice) units.")
+    Lt : int = Field(..., description="The lattice size in the t-direction in dimensionless (lattice) units.")
+    
     def setXML(self,xml):
         self.config.setXML(xml)
 
@@ -114,19 +119,28 @@ class GaugeFieldConfig(BaseModel):
         Return a list of configuration filenames required for the job and the source endpoint ID. If no actual file is required return a suitable sized list of None for the first argument. If the files are local or no files are required, return None for the second argument.
         """
         return self.config.getJobConfigurationsAndSource()
-        
+
+    def getGrid(self)->Tuple[int,int,int,int]:
+        return (self.Lx, self.Ly, self.Lz, self.Lt)
         
 
 def identifyGaugeConfigs(model, user_interactions: list[BaseMessage]) -> GaugeFieldConfig:
     #This version uses the default structured output strategy
-    
-    sys = """
-You are an assistant responsible for identifying the lattice QCD propagator gauge configuration(s) to use for the calculation, based solely on user input.
 
-Your workflow:
-1. Identify based on user input whether the user wishes to use a unit or random gauge field, or else load one or more gauge configurations, and create the corresponding data structure. If the choice can be inferred based on previous user messages, you must ask the user to confirm your choice. If it cannot, or there is any ambiguity, you must ask the user.    
-2. Populate the parameters of the data structure. If a parameter value is unknown you must ask the user; never guess parameters.
-3. If loading gauge configurations, determine whether the configuration files are local or remote. If remote, a Globus endpoint must be provided and entered into the source_uuid field; if local, this field should be set to None. Note that we are using NERSC's SuperFacility API to initiate these transfers, which also accepts special UUIDs "dtn", "hpss" or "perlmutter" in place of regular ID strings.
+    sys = """
+You are an assistant responsible for identifying all lattice QCD gauge configurations required for the calculation, based solely on user input.
+
+The configuration information is parameterized by a GaugeFieldConfig structure. Your workflow is:
+1) if the user has not already done so in their previous responses, ask the user to specify the lattice size in dimensionless (lattice) units. Use the lattice size query rules specified below.
+1) if the user has not already done so in their previous responses, ask the user to specify where to obtain the configurations. The supported options are defined by the models supported by the GaugeFieldConfig.config field. The goal of your question is to identify which of these options the user desires; *do not* list the parameters associated with those choices.
+2) instantiate an GaugeFieldConfig instance with the config field chosen as above, and input the lattice sizes.
+3) Populate the parameters of the data structure. If a parameter value is unknown you must ask the user; never guess parameters.
+4) If loading gauge configurations, determine whether the configuration files are local or remote. If remote, a Globus endpoint must be provided and entered into the source_uuid field; if local, this field should be set to None. Note that we are using NERSC's SuperFacility API to initiate these transfers, which also accepts special UUIDs "dtn", "hpss" or "perlmutter" in place of regular ID strings.
+
+Lattice size query rules:    
+- Do not insist on a specific format. Rather, in parentheses list some common formats, e.g. 32^3x64, 32 32 32 64, 32x32x32x32x64.
+- The user may choose to specify all directions at once or only some; keep asking follow-up questions until all four dimensions have been specified
+- Some actions such as DWF have a fifth dimension; ignore this dimension
     
 User Query rules:
 - Use the getUserInput tool
@@ -135,7 +149,7 @@ User Query rules:
 
 Your output must be in JSON format and adhere to the following schema:    
 """ + json.dumps(GaugeFieldConfig.model_json_schema())
-    
+   
     agent = create_agent(model=model, tools=[getUserInput,provideInformationToUser], system_prompt=sys, response_format = GaugeFieldConfig)
     
     accepted = False
@@ -143,13 +157,15 @@ Your output must be in JSON format and adhere to the following schema:
     while(accepted == False):    
         resp = agent.invoke({ "messages": user_interactions },     {"configurable": {"thread_id": "1"}})
         obj = resp["structured_response"]        
+        user_interactions = resp['messages']
         
-        Print("Obtained gauge field parameters:", obj.config)
+        output = f"Obtained gauge field parameters\n" + prettyPrintPydantic(obj)
+        Print(output)
 
         accepted = queryYesNo("Is this correct?")
         if(accepted == False):
             reason = Input("Explain what is wrong: ")
-            user_interactions.append(HumanMessage(f"Your previous response was not accepted for the following reason: {reason}"))            
+            user_interactions.append(HumanMessage(f"Your previous response was not accepted for the following reason: {reason}"))
     return obj
 
 

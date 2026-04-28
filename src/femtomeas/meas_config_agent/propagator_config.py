@@ -80,9 +80,8 @@ Your output must be in JSON format and adhere to the following schema:
 
 
         #Human validation
-        Print("Obtained", len(obj.propagators), "propagators")
-        for r in obj.propagators:
-            Print(r)
+        output = f"Obtained {len(obj.propagators)} propagator instances\n" + prettyPrintPydantic(obj.propagators)
+        Print(output)
 
         accepted = queryYesNo("Is this correct?")
         if(accepted == False):

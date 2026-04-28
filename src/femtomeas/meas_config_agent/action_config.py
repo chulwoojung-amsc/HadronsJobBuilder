@@ -68,7 +68,7 @@ def identifyActions(model, user_interactions: list[BaseMessage]) -> ActionsConfi
 You are an assistant responsible for identifying all lattice QCD action instances required to compute the propagators required for the calculation, based solely on user input.
 
 Action instances are parameterized by ActionConfig structures. Your workflow is:
-1) Ask the user to specify which action type or types they want to use. Typically a single action type is used for all propagators so you should phrase your question as if they will select just one of the options, but explain in parentheses that they are able to choose different actions if desired. In this question, *do not* list the parameters associated with those action types.
+1) If the user has not already done so in their previous responses, ask the user to specify which action type or types they want to use. Typically a single action type is used for all propagators so you should phrase your question as if they will select just one of the options, but explain in parentheses that they are able to choose different actions if desired. In this question, *do not* list the parameters associated with those action types.
 2) Identify the set of action instances required for the calculation according to the rules below.
 3) Instantiate an ActionConfig instance for each
 4) populate the parameters in conjunction with the user
@@ -94,11 +94,12 @@ Your output must be in JSON format and adhere to the following schema:
     accepted = False
     obj = None
     while(accepted == False):
-        agent = create_agent(model=model, tools=[getUserInput,provideInformationToUser,addDWFaction,addWilsonCloverAction], system_prompt=sys, response_format=ActionsConfig)
+        agent = create_agent(model=model, tools=[getUserInput,provideInformationToUser], system_prompt=sys, response_format=ActionsConfig)
         
         resp = agent.invoke({ "messages": user_interactions },     {"configurable": {"thread_id": "1"}})
         obj = resp["structured_response"]
-
+        user_interactions = resp['messages']
+        
         output = f"Obtained {len(obj.actions)} action instances\n" + prettyPrintPydantic(obj.actions)
         Print(output)
         

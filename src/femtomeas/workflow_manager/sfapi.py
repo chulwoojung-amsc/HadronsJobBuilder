@@ -9,6 +9,7 @@ from typing import Literal, Union, List, Optional, Tuple
 from .utils import checkSafePath
 from . import globals
 import time
+from .logging import wfapiLog
 
 known_machines = {  "Perlmutter" : { "sfapi_enum" : Machine.perlmutter }  }
 
@@ -91,7 +92,6 @@ def remoteMkdir(machine: str, path: str, create_parents = True, allow_unsafe = F
     elif ret[-1] == f"mkdir: created directory '{path}'":
         return 1
     else:
-        print(ret)
         return 0
 
 
@@ -267,6 +267,7 @@ def globusCopyToMachine(machine: str, dest_path : str,
     Notes:
        If source_path is a filename, only that file will be copied. If it is a directory name only the contents of that directory will be copied, not the directory itself (even if there is no trailing /)
     """
+    wfapiLog(f"Initiating globus copy from {source_endpoint}:{source_path} to {machine}:{dest_path}")
     
     if not allow_unsafe and not checkSafePath(machine, dest_path):
         raise Exception("Attempting to copy data to a location outside of the sandbox")
@@ -295,6 +296,7 @@ def globusCopyFromMachine(dest_endpoint: str, dest_path : str,
     Notes:
        If source_path is a filename, only that file will be copied. If it is a directory name only the contents of that directory will be copied, not the directory itself (even if there is no trailing /)
     """
+    wfapiLog(f"Initiating globus copy from {machine}:{source_path} to {dest_endpoint}:{dest_path} to ")
     
     if not allow_unsafe and not checkSafePath(machine, source_path):
         raise Exception("Attempting to copy data from a location outside of the sandbox")

@@ -1,0 +1,11 @@
+.my-chat pre,
+.my-chat code {
+  background: transparent !important;
+  color: #000 !important;
+}
+
+.my-chat pre code span {
+  background: transparent !important;
+  color: inherit !important;
+}
+

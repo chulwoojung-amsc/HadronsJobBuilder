@@ -13,8 +13,15 @@ from pathlib import Path
 import globus_sdk
 from globus_sdk.exc import GlobusAPIError
 from .utils import checkSafePath
+from .logging import wfapiLog
 
-known_machines = {  "Perlmutter" : { "iriapi_base" : "https://api.iri.nersc.gov/api/v1", "iriapi_group" : "perlmutter", "sfapi_base" : "https://api.nersc.gov/api/v1.2" } }
+known_machines = {  "Perlmutter" :
+                    { "iriapi_base" : "https://api.iri.nersc.gov/api/v1",
+                      "iriapi_group" : "perlmutter",
+                      "sfapi_base" : "https://api.nersc.gov/api/v1.2",
+                      "sfapi_machine_name" : "perlmutter",
+                      "queues" : [ ("debug", "max time 0.5 hours, max nodes 8"), ("regular", "use for standard, production jobs or those too large for debug") ]
+                     } }
 tokens = { "iriapi_base" : None, "sfapi_base" : None }  #index tokens by their base path
 
 #Right now we use IRI for everything but the Globus transfers, so we need to use the Superfacility API also
@@ -119,6 +126,8 @@ def interactive_login(client: globus_sdk.NativeAppAuthClient) -> dict:
         requested_scopes=" ".join(sorted(REQUIRED_SCOPES)),
         refresh_tokens=True,
     )
+    #TODO: Need a GUI popup for the IRI login
+    
     print("Open this URL, login, and consent:")
     print(client.oauth2_get_authorize_url(query_params={"prompt": "login"}))
     
@@ -134,8 +143,8 @@ def refresh_tokens(
         token_response = client.oauth2_refresh_token(refresh_token)
         return token_response.by_resource_server[IRI_RESOURCE_SERVER]
     except GlobusAPIError as exc:
-        print(
-            f"Refresh failed ({exc.http_status}); switching to interactive login."
+        wfapiLog(
+            f"IRI token refresh failed ({exc.http_status}); switching to interactive login."
         )
         return None
 
@@ -143,7 +152,7 @@ def refresh_tokens(
 def setupIRIapi(key_path):
     client =  globus_sdk.NativeAppAuthClient(GLOBUS_CLIENT_ID)
 
-    print("setupIRIapi checking stored tokens at",key_path)
+    wfapiLog("setupIRIapi checking stored tokens at",key_path)
     stored = load_tokens(Path(key_path))
     auth_data = None
     if stored and stored.get("refresh_token"):
@@ -152,8 +161,6 @@ def setupIRIapi(key_path):
     if auth_data == None:
         auth_data = interactive_login(client)
 
-    print("AUTH_DATA", auth_data)
-        
     granted = parse_scope_string(auth_data.get("scope", ""))
     missing = REQUIRED_SCOPES - granted
     if missing:
@@ -166,8 +173,8 @@ def setupIRIapi(key_path):
         ttl = int(expires_at - time.time())
         print(f"\nAccess token valid for ~{max(ttl, 0)} seconds.")
 
-    print(f"Saved token data to {key_path}")
-    print(f"Granted scopes: {auth_data.get('scope', '')}")
+    wfapiLog(f"Saved token data to {key_path}")
+    wfapiLog(f"Granted scopes: {auth_data.get('scope', '')}")
 
     tokens['iriapi_base'] = auth_data['access_token']
     
@@ -219,9 +226,35 @@ def getUserProjectIDmap(machine):
         pmap = dict()
         for acct in j:
             pmap[acct['name']] = acct['id']
-        iri_api_project_map[machine] = pmap            
+        iri_api_project_map[machine] = pmap
     
     return iri_api_project_map[machine]
+
+def getKnownMachines():
+    return list(known_machines.keys())
+
+def getMachineQueues(machine)->List[ Tuple[str,str] ]:
+    """
+    Provide a list of queues and associated information for a given machine
+    
+    Return: a list of string tuples, with the first tuple entry being the queue name and the second relevant information about the queue
+    """
+    if machine not in getKnownMachines():
+        raise Exception(f"Invalid machine: {machine}")
+
+    return known_machines[machine]["queues"]
+
+def getUserAccountProjects(machine):
+    if machine not in getKnownMachines():
+        raise Exception(f"Invalid machine: {machine}")
+    
+    out = list(getUserProjectIDmap(machine).keys())
+    if machine == "Perlmutter": #_g is required for GPU nodes
+        for i in range(len(out)):
+            out[i] += "_g"
+    return out
+    
+
 
 
 iri_api_resource_map = {}
@@ -236,6 +269,7 @@ def getResourceID(machine, rtype="compute"):
         raise Exception("Invalid resource type")
     
     if machine not in iri_api_resource_map:
+        wfapiLog("Obtaining resource information for machine",machine)
         j = get(machine, "status/resources", params={"group" : known_machines[machine]['iriapi_group'], "resource_type" : "compute"})
         
         iri_api_resource_map[machine] = dict()
@@ -245,7 +279,6 @@ def getResourceID(machine, rtype="compute"):
         compute = None
         login=None
         for r in j:
-            print(json.dumps(r))
             cpu = False
             gpu =False
             for cap in r['capability_uris']:
@@ -254,13 +287,13 @@ def getResourceID(machine, rtype="compute"):
                 if 'capabilities/gpu' in cap:
                     gpu = True
             if cpu and gpu:
-                print(f"Identified resource {json.dumps(r,indent=2)} as compute backend")
+                wfapiLog(f"Identified resource {json.dumps(r,indent=2)} as compute backend")
                 iri_api_resource_map[machine]["compute"] = r["id"]
             elif not cpu and not gpu:
-                print(f"Identified resource {json.dumps(r,indent=2)} as login frontend")
+                wfapiLog(f"Identified resource {json.dumps(r,indent=2)} as login frontend")
                 iri_api_resource_map[machine]["login"] = r["id"]
             else:
-                print(f"Warning: unidentified resource {json.dumps(r,indent=2)}")
+                wfapiLog(f"Warning: unidentified resource {json.dumps(r,indent=2)}")
         
     
     return iri_api_resource_map[machine][rtype]
@@ -277,7 +310,7 @@ def queryMachineStatus(machine: str, rtype="compute")-> bool:
     """
     rid = getResourceID(machine, rtype)
     j = get(machine, f"status/resources/{rid}")
-    print(json.dumps(j,indent=2))
+    wfapiLog(f"Query status of machine {machine} returned {j['current_status']}")
     return j['current_status'] == 'up'
     
 
@@ -306,6 +339,8 @@ def remoteLs(machine: str, path: str)-> List[str]:
     """
     assert sfapi_session != None and sfapi_client != None
     assert machine in known_machines
+
+    wfapiLog(f"Listing contents of directory {machine}:{path}")
     
     rid = getResourceID(machine, rtype="login")
 
@@ -331,7 +366,9 @@ def put(machine, suburl, data = None, params=None):
 
 
 
-def remoteChmod(machine: str, path : str, mode : str, allow_unsafe = False) -> bool: 
+def remoteChmod(machine: str, path : str, mode : str, allow_unsafe = False) -> bool:
+    wfapiLog(f"Changing permissions of file {machine}:{path} to {mode}")
+    
     if not allow_unsafe and not checkSafePath(machine, path):
         raise Exception("Path is not a subdirectory of the sandbox path")
 
@@ -346,7 +383,7 @@ def remoteChmod(machine: str, path : str, mode : str, allow_unsafe = False) -> b
     if j["status"] == "completed":
         return True
     else:
-        print(json.dumps(j,indent=2))
+        wfapiLog("Permission change failed:",json.dumps(j,indent=2))
         return False
     
 
@@ -372,6 +409,8 @@ def remoteMkdir(machine: str, path: str, create_parents = True, allow_unsafe = F
 
     TODO: Doesn't seem to be a way to check if the directory already existed; save doing and waiting on an ls, for now we just always return 1 if success
     """
+    wfapiLog(f"Creating directory {machine}:{path}")
+    
     if not allow_unsafe and not checkSafePath(machine, path):
         raise Exception("Path is not a subdirectory of the sandbox path")
 
@@ -381,17 +420,15 @@ def remoteMkdir(machine: str, path: str, create_parents = True, allow_unsafe = F
     rid = getResourceID(machine, rtype="login")
         
     j, status = post(machine, f"filesystem/mkdir/{rid}", data={"path" : path, "parent" : create_parents})
-    print(status, json.dumps(j,indent=2))
     tid = j['task_id']
     j = waitTask(machine, tid)
-    print(json.dumps(j,indent=2))
 
     if j["status"] == "completed":
         return 1
     #elif status == 304:  #This does not seem to work
     #    return 2
     else:
-        print(status, json.dumps(j,indent=2))
+        wfapiLog("Directory creation failed, status:", status, "response:", json.dumps(j,indent=2))
         return 0
 
 
@@ -406,6 +443,8 @@ def uploadBytes(machine: str, remote_path: str, content: io.BytesIO, allow_unsaf
     Return:
        True if successful, False otherwise
     """
+    wfapiLog(f"Uploading binary data to {machine}:{remote_path}")
+    
     if not allow_unsafe and not checkSafePath(machine, remote_path):
         raise Exception("Path is not below the privileged directory")
     
@@ -415,20 +454,42 @@ def uploadBytes(machine: str, remote_path: str, content: io.BytesIO, allow_unsaf
     rid = getResourceID(machine, rtype="login")
 
     j, status = post(machine, f"filesystem/upload/{rid}", params={'path' : remote_path}, files={'file': content})
-    print(json.dumps(j,indent=2))
-
     tid = j['task_id']
     j = waitTask(machine, tid)
-    print(json.dumps(j,indent=2))
 
     if j["status"] == "completed":
         return 1
     else:
-        print(status, json.dumps(j,indent=2))
+        wfapiLog("Upload failed, status:", status, " response:", json.dumps(j,indent=2))
         return 0
 
 
+def downloadFile(machine: str, remote_path: str)->str:
+    """
+    Download a (small) remote file. Returns the file contents as a string
+    Args:
+       machine - The name of the machine. Valid values are 'Perlmutter'
+       remote_path - The absolute path on the remote machine
+    """
+    wfapiLog(f"Downloading file {machine}:{remote_path}")
+       
+    if not pathlib.Path(remote_path).is_absolute():
+        raise Exception("Path must be absolute")
+    
+    rid = getResourceID(machine, rtype="login")
 
+    j = get(machine, f"filesystem/download/{rid}", params={'path' : remote_path})
+    tid = j['task_id']
+    j = waitTask(machine, tid)
+    
+    if j["status"] == "completed":
+        return j["result"]["output"]
+    else:
+        wfapiLog("Download failed, status:", status, " response:", json.dumps(j,indent=2))
+        return None
+
+
+    
     
 def executeBatchJobCompat(machine: str, script_body: str,
                     nodes : int, ranks_per_node : int, gpus_per_rank : int,
@@ -438,7 +499,11 @@ def executeBatchJobCompat(machine: str, script_body: str,
     Execute batch script on the machine
     script_body: The content of the batch script. If you are executing an existing remote script, use "source /path/to/script"    
     Note that any SLURM/PBS headers will be ignored; ensure that SLURM headers that are usually passed to srun are manually passed instead
+
+    time: the job duration. Currently it seems to only accept integers, which my testing indicates is in *seconds*
     """
+
+    wfapiLog(f"Executing batch job on machine {machine} with nodes:{nodes}, ranks/node:{ranks_per_node}, gpus/rank:{gpus_per_rank}, time:{time}, queue:{queue}, account:{account}")
     
     if not allow_unsafe and not checkSafePath(machine, job_run_dir):
         raise Exception("Path is not below the privileged directory")
@@ -470,15 +535,13 @@ def executeBatchJobCompat(machine: str, script_body: str,
         }
     #Hopefully they will allow arbitrary batch script submission as part of the API eventually!
     
-    print("JSON",json.dumps(spec,indent=2))
-    
     rid = getResourceID(machine, rtype="compute")
 
     j, status = post(machine, f"compute/job/{rid}", data=spec)
-    print(json.dumps(j,indent=2))
     if status == 200:
         return j['id']
     else:
+        wfapiLog("Job submission failed, status:",status,"reason:", json.dumps(j,indent=2))
         raise Exception("Job submission failed")
 
 
@@ -520,7 +583,7 @@ def executeBatchJobTest(machine: str, job_run_dir):
 def getJobState(machine: str, jobid: str) -> str:
     rid = getResourceID(machine, rtype="compute")
     j = get(machine, f"compute/status/{rid}/{jobid}", params = { "historical" : True })
-    print(json.dumps(j,indent=2))
+    wfapiLog(f"Queried job state {machine}:{jobid}, got {j['status']['state']}")
     return j['status']['state']
     
     
@@ -535,6 +598,7 @@ def delete(machine, suburl, params = None):
     return {} if resp.text == "" else resp.json(), resp.status_code
 
 def cancelJob(machine: str, jobid: str):
+    wfapiLog(f"Canceling job {machine}:{jobid}")
     rid = getResourceID(machine, rtype="compute")
     j, status = delete(machine, f"compute/cancel/{rid}/{jobid}")
     if status != 204:
@@ -596,6 +660,7 @@ def globusCopyToMachine(machine: str, dest_path : str,
     Notes:
        If source_path is a filename, only that file will be copied. If it is a directory name only the contents of that directory will be copied, not the directory itself (even if there is no trailing /)
     """
+    wfapiLog(f"Initiating globus copy from {source_endpoint}:{source_path} to {machine}:{dest_path}")
     
     if not allow_unsafe and not checkSafePath(machine, dest_path):
         raise Exception("Attempting to copy data to a location outside of the sandbox")
@@ -624,6 +689,7 @@ def globusCopyFromMachine(dest_endpoint: str, dest_path : str,
     Notes:
        If source_path is a filename, only that file will be copied. If it is a directory name only the contents of that directory will be copied, not the directory itself (even if there is no trailing /)
     """
+    wfapiLog(f"Initiating globus copy from {machine}:{source_path} to {dest_endpoint}:{dest_path} to ")
     
     if not allow_unsafe and not checkSafePath(machine, source_path):
         raise Exception("Attempting to copy data from a location outside of the sandbox")
@@ -632,3 +698,28 @@ def globusCopyFromMachine(dest_endpoint: str, dest_path : str,
 
     return _globusCopy(machine_globus_endpoints[machine], dest_endpoint, source_path, dest_path, machine, block_until_complete)
     
+
+def remoteRun(machine: str, args : str | List[str] ):
+    """
+    Run a command on the remote machine login node. Note this does not support returning output
+
+    Note: Currently requires Superfacility API and is restricted to NERSC
+    """
+    cmd = "bash -c \""
+    if isinstance(args, list):
+        for c in args:
+            cmd = cmd + c + ";"
+    else:
+        cmd = cmd + args
+    cmd = cmd + "\""
+
+    if machine not in known_machines:
+        raise Exception("Unknown machine")
+    m = known_machines[machine]["sfapi_machine_name"]
+    
+    wfapiLog(f"Executing command {cmd} on machine {machine}")
+    
+    j, status=post(machine, f"utilities/command/{m}", data={"executable" : cmd}, base='sfapi_base', data_is_json=False)
+
+    if status != 200:
+        raise Exception("Globus transfer failed, response content: " + json.dumps(j))

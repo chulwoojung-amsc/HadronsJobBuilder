@@ -1,3 +1,5 @@
+import os
+import tempfile
 from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 from .api_general import *
 from typing import Literal, Union, List, Optional, Tuple
@@ -107,7 +109,8 @@ def submitHadronsJob(machine: str,
                      time : str,
                      grid : Tuple[int, int, int, int], 
                      mpi : Tuple[int, int, int, int] | None = None, 
-                     ranks = None
+                     ranks = None,
+                     delete_xml_after_upload = False
                      ):
     if hadrons_info == None:
         raise Exception("Must run setHadronsInfo")
@@ -130,6 +133,9 @@ def submitHadronsJob(machine: str,
 
     remoteMkdir(machine, job_run_dir)
     uploadSmallFile(machine, f"{job_run_dir}/run.xml", hadrons_xml_file)
+
+    if delete_xml_after_upload:
+        os.remove(hadrons_xml_file)        
     
     grid_str = sizesToGridArgList(grid)
     mpi_str = sizesToGridArgList(mpi)
@@ -185,9 +191,16 @@ echo "Hadrons job completed at ${{now}}"
     #######################################
         
     remote_script_path = f"{job_run_dir}/batch_script.sh"
-    with open('/tmp/batch_script.sh', 'w') as f:
+    
+    fd, tmp_path = tempfile.mkstemp(prefix="batch_script_", text=True, dir="/tmp", suffix=".sh")
+    print("submitHadronsJob staging batch script through temporary file",tmp_path)
+    with os.fdopen(fd, 'w') as f:    
         f.write(script)
-    uploadSmallFile(machine, remote_script_path, "/tmp/batch_script.sh")
+
+    uploadSmallFile(machine, remote_script_path, tmp_path)
+
+    if os.path.exists(tmp_path):
+        os.remove(tmp_path)
         
     #return executeBatchJob(machine, remote_script_path)
     return executeBatchJobCompat(machine, f"source {remote_script_path}", nodes=nodes, ranks_per_node=4, gpus_per_rank=1,

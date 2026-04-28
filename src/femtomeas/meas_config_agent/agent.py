@@ -23,7 +23,7 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
 ## IDENTIFY OBSERVABLES
 ---
         """)       
-        state.observables = identifyObservables(model, messages).observables
+        state.observables = identifyObservables(model, messages.copy()).observables
         checkpointState(state,ckpoint_file)
 
     #Augment messages with information derived from observables
@@ -35,7 +35,7 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
 ## ACTIONS
 ---
         """)       
-        state.actions = identifyActions(model, messages).actions
+        state.actions = identifyActions(model, messages.copy()).actions
         checkpointState(state,ckpoint_file)
 
     #Add actions information to messages
@@ -48,7 +48,7 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
 ## SOURCES
 ---
         """)
-        state.sources = identifySources(model, state, messages).sources
+        state.sources = identifySources(model, state, messages.copy()).sources
         checkpointState(state,ckpoint_file)
 
 
@@ -58,7 +58,7 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
 ## EIGENSOLVERS
 ---
         """) 
-        state.eigensolvers = setupEigenSolvers(model, state, messages).solvers
+        state.eigensolvers = setupEigenSolvers(model, state, messages.copy()).solvers
         checkpointState(state,ckpoint_file)
 
     #Add eigensolvers to messages
@@ -70,7 +70,7 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
 ## SOLVERS
 ---
         """) 
-        state.solvers = identifySolvers(model, state, messages).solvers
+        state.solvers = identifySolvers(model, state, messages.copy()).solvers
         checkpointState(state,ckpoint_file)
 
     #Add sources and solvers to messages
@@ -83,7 +83,7 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
 ## PROPAGATORS
 ---
         """) 
-        state.propagators = identifyPropagators(model, state, messages).propagators
+        state.propagators = identifyPropagators(model, state, messages.copy()).propagators
         checkpointState(state,ckpoint_file)
 
     messages.append( HumanMessage("The following propagator instances have been identified based on user input:\n" + json.dumps(TypeAdapter(List[PropagatorConfig]).dump_python(state.propagators), indent=2) ) )               
@@ -95,7 +95,7 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
 ## OBSERVABLE CONFIGURATIONS
 ---
         """)
-        state.observable_configs = configureObservables(model, state, messages).observable_configs
+        state.observable_configs = configureObservables(model, state, messages.copy()).observable_configs
         checkpointState(state,ckpoint_file)
 
     if state.gauge == None:
@@ -104,7 +104,11 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
 ## GAUGE CONFIGURATIONS
 ---
         """)
-        state.gauge = identifyGaugeConfigs(model, messages)
+        state.gauge = identifyGaugeConfigs(model, messages.copy())
+        print("CHECKPOINTING STATE")
         checkpointState(state,ckpoint_file)
+        print("CHECKPOINTING STATE COMPLETE")
 
+
+    print("MEASUREMENT AGENT COMPLETE")
     return state

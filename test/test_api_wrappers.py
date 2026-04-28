@@ -5,7 +5,7 @@ import time
 import stat
 import os
 import json
-from femtomeas.workflow_manager.manager_config import readManagerConfig
+from femtomeas.workflow_manager.manager_config import readManagerConfigFile
 import sys
 
 def hadronsXMLexample(output_file):
@@ -126,11 +126,18 @@ def hadronsXMLexample(output_file):
 if len(sys.argv) == 1:
     raise Exception("Must provide the manager configuration JSON")
 
-readManagerConfig(sys.argv[1])
+readManagerConfigFile(sys.argv[1])
 
 machine = "Perlmutter"
 safe_dir = globals.remote_workdir[machine]
 print("Machine",machine, "is up?:", queryMachineStatus(machine))
+
+
+if 0:
+    import femtomeas.workflow_manager.iri_api
+    print(femtomeas.workflow_manager.iri_api.getUserAccountProjects(machine))
+    
+
 
 if 0:
     print("TESTING BATCH JOB SUBMISSION")
@@ -138,7 +145,7 @@ if 0:
     chmod u+x script.sh
     srun -n 4 ./script.sh
     ''',
-    nodes=1, ranks_per_node=4, gpus_per_rank=1, time="5", queue="debug", account="amsc013_g", job_run_dir=safe_dir, exclusive=False, allow_unsafe=True)
+    nodes=1, ranks_per_node=4, gpus_per_rank=1, time="600", queue="debug", account="amsc013_g", job_run_dir=safe_dir, exclusive=False, allow_unsafe=True)
 
     watchJobStatus(machine, jobid)
 
@@ -192,7 +199,7 @@ if 0:
     ret = remoteMkdirUnsafe(machine, safe_dir + "/1/2")
     assert ret == 1 or ret == 2
 
-if 1:
+if 0:
     hadronsXMLexample("hadrons_run.xml")
     print("TESTING HADRONS JOB SUBMISSION 1 RANKS, 1 NODE" )
     jobid = submitHadronsJob(machine, "hadrons_run.xml", f"{safe_dir}/test_job", "mp13_g", "debug", "5", (8,8,8,8), (1,1,1,1))
@@ -228,3 +235,12 @@ if 0:
 
 if 0:
     globusCopyFromMachine("dtn", "/global/cfs/cdirs/mp13/ckelly/globus_source_test_dir/copyback",  machine, safe_dir + "/test.dat", block_until_complete=True)
+
+if 0:
+    result = downloadFile(machine, "/global/u2/c/ckelly/tocopy")
+    print(result)
+    
+if 1:
+    remoteRun(machine, ["rm -f /global/u2/c/ckelly/test_remote_run", "echo hello >  /global/u2/c/ckelly/test_remote_run"])
+    result = downloadFile(machine, "/global/u2/c/ckelly/test_remote_run")
+    assert "hello" in result

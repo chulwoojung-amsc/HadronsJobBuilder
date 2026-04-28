@@ -25,7 +25,7 @@ class PointSource(BaseModel):
         
     
 class WallSource(BaseModel):
-    """A wall or wall-momentum (aka just "momentum") source. A wall source requires just a timeslice, whereas a wall-momentum source needs a momentum also."""
+    """A wall or wall-momentum (aka just "momentum") source. A wall source requires just a timeslice, whereas a wall-momentum source needs a momentum also. When describing these sources, list them as two separate types: wall and wall-momentum/momentum"""
     type: Literal["wall"] = "wall"
     timeslice: int = Field(..., description="time slice of the wall")
     momentum: Optional[Tuple[float,float,float,float]] = Field(
@@ -65,7 +65,7 @@ You are an assistant responsible for identifying all lattice QCD propagator sour
 Previous agent interactions have identified a set of observables and their required number of propagators. Sources are inputs to constructing those propagators. A source instance has a source type (e.g. point, wall) along with a set of parameters that depend on the source type. Each propagator requires a source, but can share the same source instance. Create a separate entry for each unique collection of source parameters, for example if the user specified propagators with point sources at [0,0,0,0] and [12,24,12,24], create two separate source instances with different source locations.
 
 Your workflow:
-1) Ask the user to specify what source *types* they wish to use for which propagators. This question should not be specific to one observable or propagator; rather you should allow the user the freedom to specify information that could apply to multiple or even all propagators. In your question, list the sources that you support but do not list their associated parameters. Do not ask the user to provide parameters at this stage.
+1) If the user has not already done so in their previous responses, ask the user to specify what source *types* they wish to use for which propagators. This question should not be specific to one observable or propagator; rather you should allow the user the freedom to specify information that could apply to multiple or even all propagators. In your question, list the sources that you support but do not list their associated parameters. Do not ask the user to provide parameters at this stage.
 
 For example, "Specify the sources required for the calculation (supported options: <OPTIONS>)."
     
@@ -74,7 +74,7 @@ For example, "Specify the sources required for the calculation (supported option
 4) Insert the SourceConfig into the SourcesConfig.sources list
 
 Source instance rules:
-- If a parameter value is unknown you must ask the user; never guess parameters.    
+- If a parameter value is unknown you must ask the user; never guess parameters unless they are explicitly described as "optional" in their schema documentation, for which you may choose the default value unless otherwise specified by the user.
 - Create a separate entry for each source instance, even if the same source type appears multiple times with different parameters.
 - Your list must include every source instance explicitly mentioned, and only those. Do not invent instances. Do not combine instances unless the user explicitly describes them as the same.
 - Only create separate entries for sources whose source parameters differ, even if those sources will be associated with different actions in their associated propagators. For instance, if there are two action instances, 'action_a' and 'action_b' which both need wall sources with t=0, create only one wall source instance.
@@ -115,7 +115,8 @@ Your output must be in JSON format and adhere to the following schema:
     while(accepted == False):
         resp = agent.invoke({ "messages": user_interactions })
         obj = resp["structured_response"]        
-
+        user_interactions = resp['messages']
+        
         #Auto validation
         valid = True
         invalid_why = "Your previous response was invalid for the following reason(s):"
@@ -131,10 +132,10 @@ Your output must be in JSON format and adhere to the following schema:
             continue       
         
         #Human validation
-        Print("Obtained", len(obj.sources), "sources")
-        for r in obj.sources:
-            Print(r)
+        output = f"Obtained {len(obj.sources)} source instances\n" + prettyPrintPydantic(obj.sources)
+        Print(output)
 
+            
         accepted = queryYesNo("Is this correct?")
         if(accepted == False):
             reason = Input("Explain what is wrong: ")

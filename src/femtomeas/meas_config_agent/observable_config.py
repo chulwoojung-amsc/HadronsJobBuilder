@@ -136,12 +136,11 @@ def configureObservables(model, state, user_interactions: list[BaseMessage]) -> 
 
         
         #Human validation
-        Print("Obtained", len(obj.observable_configs), " observable configurations")
-        for r in obj.observable_configs:
-            Print(r)
+        output = f"Obtained {len(obj.observable_configs)} observable configuration instances\n" + prettyPrintPydantic(obj.observable_configs)
+        Print(output)
             
         accepted = queryYesNo("Is this correct?")
         if(accepted == False):
             reason = Input("Explain what is wrong: ")
-            user_interactions.append(HumanMessage(f"Your previous response was not accepted for the following reason: {reason}"))            
+            user_interactions.append(HumanMessage(f"Your previous response was not accepted for the following reason: {reason}"))
     return obj

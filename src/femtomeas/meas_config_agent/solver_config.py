@@ -48,7 +48,7 @@ You are an assistant responsible for identifying the solvers required for comput
 Previous agent interactions have identified a set of observables and their required number of propagators. Solvers are required to compute those propagators. A solver instance has a set of parameters such as stopping conditions and the maximum number of iterations. The instance also has an 'action' field, that must be set to the name of one of the action instances identified previously. Each action instance must have one or more solver instances associated with it.
 
 Workflow:
-1) Ask the user to specify what solver *types* they wish to use for which propagators. This question should not be specific to one observable or propagator; rather you should allow the user the freedom to specify information that could apply to multiple or even all propagators. In your question, list the solvers that you support but do not list their associated parameters. Do not ask the user to provide parameters at this stage.
+1) If the user has not already done so in their previous responses, ask the user to specify what solver *types* they wish to use for which propagators. This question should not be specific to one observable or propagator; rather you should allow the user the freedom to specify information that could apply to multiple or even all propagators. In your question, list the solvers that you support but do not list their associated parameters. Do not ask the user to provide parameters at this stage.
 
 For example, "Specify the solvers required for the calculation (supported options: <OPTIONS>)."
 
@@ -103,9 +103,9 @@ Your output must be in JSON format and adhere to the following schema:
     obj = None
     while(accepted == False):    
         resp = agent.invoke({ "messages": user_interactions })
-        #print(resp)
         obj = resp["structured_response"]        
-
+        user_interactions = resp['messages']
+        
         #Auto validation
         valid = True
         invalid_why = "Your previous response was invalid for the following reason(s):"

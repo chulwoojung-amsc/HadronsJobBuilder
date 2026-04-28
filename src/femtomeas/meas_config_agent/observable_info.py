@@ -5,7 +5,7 @@ from langchain.messages import (
     ToolCall,
     AIMessage
 )
-
+from langchain.agents import create_agent
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple
 from .common import *
@@ -49,30 +49,39 @@ def identifyObservables(model, user_interactions: list[BaseMessage]) -> Observab
     
    You are an assistant responsible for identifying all lattice QCD observables the user wants to compute, and extracting only the information explicitly provided by the user that is relevant to computing each observable.
 
-You will receive the user’s original request. Your task is to read only this content and produce a structured list of observables. Do not invent, infer, or assume any information that is not explicitly stated by the user.
-
+You will receive the user’s original request. Your task is to read only this content and produce a structured list of observables in the 'observables' field of your output. Do not invent, infer, or assume any information that is not explicitly stated by the user.
+  
 For each observable mentioned by the user:
+1) Create a separate ObservableInfo entry for each, even if the observable appears multiple times with different parameters or conditions.
+2) Assign a unique name to the observable instance in the 'name' field
+3) In the 'user_info' field, summarize any additional information provided by the user regarding the observable. Record only the information that the user has clearly provided about that specific instance of the observable. Examples include:
+     – required propagators
+     – operator insertions
+     – quantum numbers or kinematic parameters
+     – anything else explicitly tied to the computation
+  If the user did not specify information for an observable, leave its user_info field empty rather than guessing or filling in defaults.
+4) Populate the 'obs_type' field with an object of type appropriate to the observable. If the user describes an observable that is not supported, you must describe to the user which observables you support and ask the user which ones they want. Use the User Query rules below to inform/ask the user.
 
-Create a separate entry for each, even if the observable appears multiple times with different parameters or conditions.
+Observable instance rules:
+- You can output the same observable information for multiple entries but only if they have different observable types.
+- Your list must include every observable explicitly mentioned, and only those observables. Do not invent observables, do not combine observables unless the user explicitly describes them as the same, and do not add details that are not explicitly provided by the user.
 
-Assign a unique name/tag to the observable instance.
-    
-In the user_info field, summarize any additional information provided by the user regarding the observable. Record only the information that the user has clearly provided about that specific instance of the observable. Examples include:
-– required propagators
-– operator insertions
-– quantum numbers or kinematic parameters
-– anything else explicitly tied to the computation   
-If the user did not specify information for an observable, leave its user_info field empty rather than guessing or filling in defaults.
+User Query rules:
+- Use the getUserInput tool to ask questions of the user
+- If the user responds to a query with an invalid response, repeat the query until a valid response is provided. Never accept an invalid response.
+- Instead of answering your question, the user might respond to your query with a question. If this occurs, answer the user's question using provideInformationToUser tool and ensure the user is satisfied with a follow-up call to getUserInput. Once satisfied, repeat the original question.
 
-You can output the same observable information for multiple entries but only if they have different observable types.
-    
-Your list must include every observable explicitly mentioned, and only those observables. Do not invent observables, do not combine observables unless the user explicitly describes them as the same, and do not add details that are not explicitly provided by the user.
-"""
+Your output must be in JSON format and adhere to the following schema:    
+""" + json.dumps(ObservablesInfo.model_json_schema())
 
    accepted = False
    obj = None
    while(accepted == False):
-      obj = callModelWithStructuredOutput(model, sys, user_interactions, ObservablesInfo, True)
+      agent = create_agent(model=model, tools=[getUserInput,provideInformationToUser], system_prompt=sys, response_format=ObservablesInfo)
+        
+      resp = agent.invoke({ "messages": user_interactions },     {"configurable": {"thread_id": "1"}})
+      obj = resp["structured_response"]
+      user_interactions = resp['messages']
 
       output = f"Obtained {len(obj.observables)} observables:\n" + prettyPrintPydantic(obj.observables)
       Print(output)

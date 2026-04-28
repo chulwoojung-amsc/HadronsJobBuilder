@@ -175,7 +175,7 @@ def pydantic_to_markdown(
 
             if scalar_items:
                 lines.append(f"{pad(level)}| | |")
-                #lines.append(f"{pad(level)}|---|---|")
+                lines.append(f"{pad(level)}|---|---|")
                 for i, item in enumerate(scalar_items, start=1):
                     lines.append(f"{pad(level)}| {i} | {escape_table_cell(item)} |")
                 lines.append("")
@@ -199,24 +199,5 @@ def pydantic_to_markdown(
         lines = render_table(data, 0, None)
     else:
         raise Exception("Invalid mode")
-    
-    # if mode == "original":
-    #     if isinstance(data, Mapping):
-    #         lines: list[str] = []
-    #         for k, v in data.items():
-    #             if v is None and not include_none:
-    #                 continue
-    #             lines.extend(render_original_value(v, 0, str(k)))
-    #     else:
-    #         lines = render_original_value(data, 0, None)
-    #     return "\n".join(lines).strip()
-    # elif mode == "table":
-    #     if isinstance(data, Mapping):
-        #         lines = render_table(data, 0, None)
-    #     else:
-    #         lines = render_table(data, 0, None)
-    # else:
-    #     raise Exception("Invalid mode")
-
             
     return "\n".join(lines).strip()

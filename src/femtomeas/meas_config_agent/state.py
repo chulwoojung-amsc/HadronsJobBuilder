@@ -11,6 +11,7 @@ from .propagator_config import *
 from .gauge import *
 from .eigenvectors import *
 from .hadrons_xml import HadronsXML
+from .common import Print
 
 def checkpointState(state, filename):
     #j = json.dumps({k: v.model_dump() for k, v in state.items()}, indent=2)
@@ -19,7 +20,7 @@ def checkpointState(state, filename):
         wr.write(json.dumps(j,indent=2))
 
 def reloadStateCheckpoint(filename):
-    print("Reloading state checkpoint from",filename)
+    Print("Reloading state checkpoint from",filename)
     with open(filename, 'r') as rd:
         j = rd.read()
     return State.model_validate_json(j)
