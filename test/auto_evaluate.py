@@ -1,6 +1,6 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage
-from langchain.messages import (
+from langchain_core.messages import (
     SystemMessage,
     HumanMessage,
     ToolCall,

@@ -1,7 +1,7 @@
 from langchain.tools import tool
 from pydantic import BaseModel, Field
 from langchain_core.messages import BaseMessage
-from langchain.messages import (
+from langchain_core.messages import (
     SystemMessage,
     HumanMessage,
     ToolCall,
