@@ -1,10 +1,4 @@
-from langchain_core.messages import BaseMessage
-from langchain.messages import (
-    SystemMessage,
-    HumanMessage,
-    ToolCall,
-    AIMessage
-)
+from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, ToolCall, AIMessage
 
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple
@@ -37,7 +31,7 @@ class WilsonCloverAction(BaseModel):
     csw_t: float = Field(..., description="Clover-term coefficient c_SW^t")
                         
     def setXML(self,name,xml):
-        opt = xml.addModule(name,"MAction::DWF")
+        opt = xml.addModule(name,"MAction::WilsonClover")
         HadronsXML.setValues(opt, [ ("gauge", "gauge"), ("mass", self.mass), ("csw_r",self.csw_r), ("csw_t",self.csw_t) ] )
 
         ca = ET.SubElement(opt, "clover_anisotropy")
