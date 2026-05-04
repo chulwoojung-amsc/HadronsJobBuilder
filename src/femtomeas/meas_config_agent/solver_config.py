@@ -124,7 +124,7 @@ Your output must be in JSON format and adhere to the following schema:
             continue        
 
         #Human validation
-        output = "Obtained {len(obj.solvers)} solvers\n" + prettyPrintPydantic(obj.solvers)
+        output = f"Obtained {len(obj.solvers)} solvers\n" + prettyPrintPydantic(obj.solvers)
         Print(output)
         
         accepted = queryYesNo("Is this correct?")

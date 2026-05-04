@@ -133,7 +133,7 @@ safe_dir = globals.remote_workdir[machine]
 print("Machine",machine, "is up?:", queryMachineStatus(machine))
 
 
-if 0:
+if 1:
     import femtomeas.workflow_manager.iri_api
     print(femtomeas.workflow_manager.iri_api.getUserAccountProjects(machine))
     
