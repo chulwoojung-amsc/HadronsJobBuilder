@@ -46,14 +46,30 @@ def promptStringList(lines : List[str], indent : int = 0):
         out = out + '\n' + b + '- '+  indentExceptFirst(lines[i], b2)
     return out
 
+
+scratch = []
+
+@tool
+def scratchPadWrite(content : str)->None:
+    """Append text to the agent scratchpad
+Args:
+    content: The content to add to the scratchpad
+    """
+    print("SCRATCH WRITE",content)
+    scratch.append(content)
+
+@tool
+def scratchPadRead()->str:
+    """Read back the agent scratchpad in the format of a numbered list"""
+    out = ""
+    for i,v in enumerate(scratch):
+        out = out + f"{i} : {v}\n"
+    print("SCRATCH READ",out)
+    return out
+    
+
 class ParameterCheck(BaseModel):
     missing_parameters: List[str] =  Field(..., description="The list of parameters for which the users has not specified a value.")
-
-    # @model_validator(mode="before")
-    # @classmethod
-    # def strip_reasoning(cls, data):
-    #     print("VALIDATING",data,"TYPE",type(data))
-    #     return data
     
 def invokeMainAgent(agent, user_interactions, config):
     """Invoke the agent, updating the message list with the output and returning the response message content
@@ -197,12 +213,15 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     1) ONE question
     2) ONE answer to the user's previous question AND ONE further question
     NEVER output text not intended for the user such as notes-to-self. See the output rules below.
+    3) The text "<DONE>", indicating that the conversation is complete
     
     The overall goal of your conversation is to aid the user in choosing values for each for the fields in the schema {output_type_name} (provided below).
   
     To formulate the response, you are free to call appropriate tools to obtain extra information to help the user.
 
     To identify if the user has chosen a value, confirm that the user's response is a statement describing a valid value for the parameter.
+
+    You must keep notes of choices made by the user using the scratchPadWrite tool. Refer to the scratchpad rules below.
     
     Obtain the values for the parameters in the order they appear in {output_type_name}
     
@@ -224,15 +243,24 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     -------------------------------------------
     General Parameter Rules:
     -------------------------------------------
-    - If the parameter rules specify that *you* should choose or set the value of a specific parameter yourself, you must ignore/skip this parameter. Do not ask the user about this parameter.
-    - Otherwise, **Never** guess a parameter. These values should always be obtained from the user. Never record such a parameter value unless it has been explicitly provided by the user. Follow the User Query rules below for questions to the user.
+    - If the parameter rules specify that *you* should choose or set the value of a specific parameter yourself never ask the user about this parameter.
+    - **Never** guess a parameter that should be provided by the user. These values should always be obtained from the user. Never record such a parameter value unless it has been explicitly provided by the user. Follow the User Query rules below for questions to the user.
     - If a parameter has a default, you may suggest that value to the user but you must not assume a value without asking.    
 
     -------------------------------------------
     Tool Rules:    
     -------------------------------------------
+    - Use scratchPadWrite to store user choices and other notes.
+    - Use scratchPadRead to retrieve the scratchpad content at any time
     - If a tool provides a list of valid responses, only accept values from among that list as valid choices by the user. If you list the values, ensure you only list those returned by the tool; never make up entries.
 {promptStringList(tool_rules,4)}
+
+    -------------------------------------------
+    Scratchpad rules:
+    -------------------------------------------
+    - Use the scratchpad to take notes of all choices made by the user. You must write a note for *every* response that the user gives.
+    - Always write a note, even if you don't yet have all the parameter values. Just record what you have
+    - Ensure that you also take note of the context. For example, if you are recording parameter choices for a specific propagator, note which propagator thse values correspond to.
     
     -------------------------------------------
     User Query rules:
@@ -266,8 +294,10 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     """ + json.dumps(structured_output_model.model_json_schema())
 
     
-    config = {"configurable": {"thread_id": "1", "stream" : False}} 
-    agent = create_agent(model=llm_model, tools=tools, system_prompt=sys)
+    config = {"configurable": {"thread_id": "1", "stream" : False}}
+
+    all_tools = tools.copy() + [scratchPadWrite,scratchPadRead]
+    agent = create_agent(model=llm_model, tools=all_tools, system_prompt=sys)
 
 
     check_param_rules_header = """    -------------------------
@@ -278,11 +308,16 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
 
     
     check_complete_sys = """
-    You must check the message history to determine if the user has provided answers to all fields in the following schema:
+    You must check the message history and the scratchpad contents to determine if the user has provided answers to all fields in the following schema:
     """ + json.dumps(structured_output_model.model_json_schema()) + f"""
     Identify all parameters that the user has not specified and output them into the missing_parameters field of your output.
     If the user has specified all parameters, set missing_parameters to an empty list
 
+    -----------------------
+    Scratchpad content
+    -----------------------
+    {json.dumps(scratch)}
+    
 {check_param_rules_header}    
 
 {promptStringList(parameter_rules,4)}
@@ -299,7 +334,7 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     output_sys = f"""
     You are an agent responsible for inserting information from the user into a structured output with the schema below.
 
-    Use your message history to identify the user's decision for a parameter
+    Use your message history and the scratchpad content to identify the user's decision for a parameter
 
     Determine whether the user has chosen a value by identifying whether the user's response is a statement describing a valid value for the parameter.
 
@@ -307,6 +342,11 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     - If the rules for a specific parameter state that you must choose or specify a value, do this now based on the rule and the message history
     - Otherwise, **never** guess a parameter. These values should always be obtained from the user's responses.
 
+    -----------------------
+    Scratchpad content
+    -----------------------
+    {json.dumps(scratch)}
+    
 {check_param_rules_header}    
 
 {promptStringList(parameter_rules,4)}
