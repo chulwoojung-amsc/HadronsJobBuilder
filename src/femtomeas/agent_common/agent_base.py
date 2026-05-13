@@ -71,7 +71,15 @@ def scratchPadRead()->str:
     out = listEnumerateStr(scratch)
     print("SCRATCH READ",out)
     return out
-    
+
+main_agent_done = False
+
+@tool
+def mainAgentDone()->None:
+    """Call this tool to signal that the agent workflow is complete. Ensure all parameters have been specified before calling"""
+    print("AGENT SIGNALED DONE")
+    global main_agent_done
+    main_agent_done = True
 
 class ParameterCheck(BaseModel):
     missing_parameters: List[str] =  Field(..., description="The list of parameters for which the users has not specified a value.")
@@ -103,12 +111,6 @@ def invokeMainAgent(agent, user_interactions, config):
     except Exception as e:
         user_interactions.append(HumanMessage(f"Encountered an error: {e}"))
         return None
-
-
-def removeDoneTagFromLastMessage(user_interactions):
-    assert isinstance(user_interactions[-1], AIMessage)
-    con = re.sub(r'<DONE>', '', user_interactions[-1].content)
-    user_interactions[-1] = AIMessage(con)            
 
 
 # def invokeAgentWithStructuredOutput(agent, messages, output_format):
@@ -159,8 +161,6 @@ def checkAllParametersSpecified(check_complete_agent, user_interactions):
     
     if len(obj.missing_parameters) > 0:
         print("CHECK COMPLETE AGENT FOUND MISSING PARAMETERS:",obj.missing_parameters)
-        #Remove the <DONE> tag from the previous message, it is not done!
-        removeDoneTagFromLastMessage(user_interactions)
         user_interactions.append(HumanMessage(f"The following parameters have not yet been specified by the user: { obj.missing_parameters }. Work with the user to determine these parameters."))
         return False
     else:
@@ -195,6 +195,9 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
                    additional_user_query_rules = []
                    ):
 
+    global main_agent_done
+    main_agent_done = False
+    
     output_type_name = type(structured_output_model).__name__
     param_rules_header = """    -------------------------------------------
     Additional rules for specific parameters:   
@@ -218,7 +221,6 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     1) ONE question
     2) ONE answer to the user's previous question AND ONE further question
     NEVER output text not intended for the user such as notes-to-self. See the output rules below.
-    3) The text "<DONE>", indicating that the conversation is complete
     
     The overall goal of your conversation is to aid the user in choosing values for each for the fields in the schema {output_type_name} (provided below).
   
@@ -232,7 +234,7 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     
     If the user asks a question, you must answer it before asking any further questions
 
-    Once the user has specified all parameters, respond with "<DONE>" and nothing else. Never output the completed JSON. Never ask the user to confirm the complete set of parameters.
+    Once the user has specified all parameters, call the mainAgentDone tool to signal completion. Never output the completed JSON. Never ask the user to confirm the complete set of parameters.
 
     DO NOT PERFORM ANY PLANNING STEPS
 
@@ -244,7 +246,7 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     - In your response to the user, *never* include any reasoning, chain-of-thought or notes-to-self. Only ever include a single question or an answer followed by a question. For example, never output "We need to wait for user response."
     - If you do decide to include reasoning in your output despite these explicit instructions *not to*, you may receive an error message. Do not apologize, simply generate the correct output
     - If the user has not responsed to your question, do not think ahead to the next question. Wait for the user to respond.
-    - Do not output the completed JSON schema. Simply terminate your workflow with "<DONE>" when all the parameters have been chosen by the user.
+    - Do not output the completed JSON schema. Simply terminate your workflow by calling the mainAgentDone tool when all the parameters have been chosen by the user.
     
     -------------------------------------------
     General Parameter Rules:
@@ -272,6 +274,7 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     - Always write a note if the user has made a choice of a parameter value, even if you don't yet have all the parameter values. Just record what you have
     - Ensure that you also take note of the context. For example, if you are recording parameter choices for a specific propagator, note which propagator thse values correspond to.
     - Do not repeat information in the scratchpad. Before calling scratchPadWrite, check the current scratchpad content and only add information if the scratchpad either does not contain it or the new content supercedes the existing.
+    - The scratchpad is also available to the automated validation steps performed after your workflow. You can thus use the scratchpad to respond to validation or missing parameter errors to clarify
     
     -------------------------------------------
     User Query rules:
@@ -317,7 +320,7 @@ Current scratchpad contents
         #print("SCRATCHPAD", listEnumerateStr(scratch))
         return prompt
     
-    all_tools = tools.copy() + [scratchPadWrite]
+    all_tools = tools.copy() + [scratchPadWrite,mainAgentDone]
     agent = create_agent(model=llm_model, tools=all_tools, middleware=[system_prompt])
 
 
@@ -387,12 +390,11 @@ Current scratchpad contents
     
     while(accepted == False):
         resp_content = invokeMainAgent(agent, user_interactions, config)
-        if resp_content == None:
-            continue
                     
-        if "<DONE>" in resp_content:
+        if main_agent_done:
             #Use an agent to check that it really is done
             if not checkAllParametersSpecified(check_complete_agent, user_interactions):
+                main_agent_done = False
                 continue
     
             #Formally parse the message chain into structured output
@@ -417,11 +419,15 @@ Current scratchpad contents
             
             if(accepted == False):
                 reason = AgentInput("Explain what is wrong: ")
-                removeDoneTagFromLastMessage(user_interactions)
+                main_agent_done = False
                 user_interactions.append(HumanMessage(f"Your previous response was not accepted for the following reason: {reason}"))
                 continue
             else:
                 break
+            
+        elif resp_content == None:
+            continue
+            
         else:
             #Obtain the user response
             user_resp = AgentInput(resp_content)
