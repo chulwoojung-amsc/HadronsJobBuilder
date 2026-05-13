@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter, 
 from typing import Literal, Union, List, Optional, Tuple, Any
 from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from langchain.agents import create_agent
-from langchain.agents.middleware import before_model, after_model, AgentState
+from langchain.agents.middleware import before_model, after_model, AgentState, dynamic_prompt, ModelRequest
 import json
 from .common import getUserInput, provideInformationToUser, queryYesNo, prettyPrintPydantic, Print as AgentPrint, Input as AgentInput
 from femtomeas.workflow_manager.api_general import getKnownMachines, getUserAccountProjects, getMachineQueues
@@ -51,19 +51,24 @@ scratch = []
 
 @tool
 def scratchPadWrite(content : str)->None:
-    """Append text to the agent scratchpad
+    """Append text to the agent scratchpad. The existing content is preserved by this operation.
 Args:
     content: The content to add to the scratchpad
     """
     print("SCRATCH WRITE",content)
     scratch.append(content)
 
+def listEnumerateStr(lst)->str:
+    out = ""
+    for i,v in enumerate(lst):
+        out = out + f"{i} : {v}\n"
+    return out
+
+    
 @tool
 def scratchPadRead()->str:
     """Read back the agent scratchpad in the format of a numbered list"""
-    out = ""
-    for i,v in enumerate(scratch):
-        out = out + f"{i} : {v}\n"
+    out = listEnumerateStr(scratch)
     print("SCRATCH READ",out)
     return out
     
@@ -239,6 +244,7 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     - In your response to the user, *never* include any reasoning, chain-of-thought or notes-to-self. Only ever include a single question or an answer followed by a question. For example, never output "We need to wait for user response."
     - If you do decide to include reasoning in your output despite these explicit instructions *not to*, you may receive an error message. Do not apologize, simply generate the correct output
     - If the user has not responsed to your question, do not think ahead to the next question. Wait for the user to respond.
+    - Do not output the completed JSON schema. Simply terminate your workflow with "<DONE>" when all the parameters have been chosen by the user.
     
     -------------------------------------------
     General Parameter Rules:
@@ -251,16 +257,21 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     Tool Rules:    
     -------------------------------------------
     - Use scratchPadWrite to store user choices and other notes.
-    - Use scratchPadRead to retrieve the scratchpad content at any time
+    - The current scratchpad content is included in your system prompt
     - If a tool provides a list of valid responses, only accept values from among that list as valid choices by the user. If you list the values, ensure you only list those returned by the tool; never make up entries.
 {promptStringList(tool_rules,4)}
 
     -------------------------------------------
     Scratchpad rules:
     -------------------------------------------
-    - Use the scratchpad to take notes of all choices made by the user. You must write a note for *every* response that the user gives.
-    - Always write a note, even if you don't yet have all the parameter values. Just record what you have
+    - Use the scratchpad to take notes of all choices made by the user.
+    - You must write a note for *every* user response that contains a choice
+    - Do not call scratchPadWrite if the user asks you a question.
+    - Do not record questions that the user asks to you or notes on your responses. Only record choices.
+    - The note must include all choices that the user has made that are not currently noted in the scratchpad
+    - Always write a note if the user has made a choice of a parameter value, even if you don't yet have all the parameter values. Just record what you have
     - Ensure that you also take note of the context. For example, if you are recording parameter choices for a specific propagator, note which propagator thse values correspond to.
+    - Do not repeat information in the scratchpad. Before calling scratchPadWrite, check the current scratchpad content and only add information if the scratchpad either does not contain it or the new content supercedes the existing.
     
     -------------------------------------------
     User Query rules:
@@ -296,8 +307,18 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     
     config = {"configurable": {"thread_id": "1", "stream" : False}}
 
-    all_tools = tools.copy() + [scratchPadWrite,scratchPadRead]
-    agent = create_agent(model=llm_model, tools=all_tools, system_prompt=sys)
+    @dynamic_prompt
+    def system_prompt(request: ModelRequest) -> str:
+        prompt = sys + f"""
+---------------------------
+Current scratchpad contents
+---------------------------        
+{listEnumerateStr(scratch)}"""
+        #print("SCRATCHPAD", listEnumerateStr(scratch))
+        return prompt
+    
+    all_tools = tools.copy() + [scratchPadWrite]
+    agent = create_agent(model=llm_model, tools=all_tools, middleware=[system_prompt])
 
 
     check_param_rules_header = """    -------------------------
