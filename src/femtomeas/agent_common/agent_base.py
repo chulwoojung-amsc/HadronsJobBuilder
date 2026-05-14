@@ -197,6 +197,7 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
 
     global main_agent_done
     main_agent_done = False
+    scratch.clear()
     
     output_type_name = type(structured_output_model).__name__
     param_rules_header = """    -------------------------------------------
