@@ -3,6 +3,7 @@ from femtomeas.agent_common.common import *
 from .state import *
 from .hadrons_xml import HadronsXML
 import femtomeas.workflow_manager as wfman
+from .observable_info import observableSkills
 
 def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
     if reload_state and os.path.exists(ckpoint_file):
@@ -27,7 +28,7 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
         checkpointState(state,ckpoint_file)
 
     #Augment messages with information derived from observables
-    messages.append( HumanMessage("The following information has been derived regarding the observables we need to compute based on user input:\n" + json.dumps(TypeAdapter(List[ObservableInfo]).dump_python(state.observables)  , indent=2) ) )
+    messages.append( HumanMessage("The following information has been derived regarding the observables we need to compute based on user input:\n" + json.dumps(TypeAdapter(List[ObservableInfo]).dump_python(state.observables)  , indent=2) + "\n" + observableSkills(state.observables) ) )
 
     if state.actions == None:
         Print("""

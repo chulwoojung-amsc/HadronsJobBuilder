@@ -11,30 +11,50 @@ from typing import Literal, Union, List, Optional, Tuple
 from femtomeas.agent_common.common import *
 from femtomeas.agent_common.agent_base import parameterAgent
 
-class Pion2ptObs(BaseModel):
-   """The pion two-point function. This observable involves a contraction of two propagators, which may be the same."""
-   type: Literal["pion2pt"] = "pion2pt"
-   n_propagator: Literal[2] = Field(2, description="The required number of propagators")
-   obs_info: Literal[""] = Field("", description="General information about this observable")   
-   
-class Vector2ptObs(BaseModel):
-   """The vector two-point function. This observable involves a contraction of two propagators, which may be the same."""
-   type: Literal["vector2pt"] = "vector2pt"
-   n_propagator: Literal[2] = Field(2, description="The required number of propagators")
-   obs_info: Literal[""] = Field("", description="General information about this observable")
+class Meson2ptObs(BaseModel):
+   """A meson two-point function or "correlator"."""
+   type: Literal["meson2pt"] = "meson2pt"
+   meson_type : str = Field(..., description="The type of meson, e.g. pion, kaon, rho. Also accept types described by their parity transformation properties, e.g. scalar, pseudoscalar, vector")
+
+   def skill(self):
+      return """- Meson two-point functions:
+  Meson two-point functions are typically used to compute particle masses or decay constants (e.g. f_pi).
+
+  This observable requires two propagators, that are contracted together at some timeslice-localized sink. The first propagator argument has color flow from source to sink, and the second propagator argument has gamma^5-hermiticity applied to it such that the color flow is from sink to source.
+
+  Pion and kaon correlators are both pseudoscalar two-point functions, the difference being that the pion usually has both quarks with the same (light) mass, whereas the kaon has one heavy and one light quark."""
    
 class ObservableInfo(BaseModel):
    """Information about an observable to be computed."""
-   obs_type: Union[Pion2ptObs,Vector2ptObs] = Field(...,description="The observation type and important knowledge.", discriminator="type")
+   obs_type: Union[Meson2ptObs]= Field(...,description="The observable contraction and particle types, and important knowledge.", discriminator="type")
    user_info: str = Field(...,description="Any relevant information obtained from the user regarding the observable, such as "
                      "propagator masses, momenta, source/sink smearing, etc. "
                      "Use an empty string if no extra information is given.")
-   name: str = Field(...,description="A unique name/tag identifier for this observable instance")
-    
+
+
+def observableSkills(observables):
+   inc = set()
+   out = """
+--------------------------------------
+Information about required observables
+--------------------------------------
+"""
+   for o in observables:
+      if (t := type(o.obs_type)) not in inc:
+         out = out + o.obs_type.skill() + "\n"
+         inc.add(t)
+   print("SKILLS", out)
+   return out
+
+
+   
 class ObservablesInfo(BaseModel):
     observables: List[ObservableInfo] = Field(...,description="The list of observables")
 
+    def check(self):
+       return (True, "")
 
+    
 def identifyObservables(model, user_interactions: list[BaseMessage]) -> ObservablesInfo:
    """
    Parse the list of messages to identify a list of observable keys and their associated information
@@ -47,18 +67,18 @@ def identifyObservables(model, user_interactions: list[BaseMessage]) -> Observab
       """observables:
   You will receive the user’s original request. Your task is to read only this content and produce a structured list of observables in the 'observables' field of your output. Do not invent, infer, or assume any information that is not explicitly stated by the user.
 
-  Do not ask the user if they want to specify any more observables.
-  Do not ask the user to confirm the list of observables      
-
-  You must:
-  - Create a separate ObservableInfo entry for each observable mentioned by the user, even if the observable appears multiple times with different parameters or conditions.
-  - You can output the same observable information for multiple entries but only if they have different observable types.
+  Use the following workflow:
+  - From the user's response, identify which observables the user wants to compute.
+  - Record any other information provided by the user about that observable in the user_info field
+      
+  Rules:
+  - Any given observable can appear only once, even if the user wants to compute it multiple times with different inputs.
   - Your list must include every observable explicitly mentioned, and only those observables. Do not invent observables, do not combine observables unless the user explicitly describes them as the same, and do not add details that are not explicitly provided by the user.
+  - Do not ask the user if they want to specify any more observables.
+  - Do not ask the user to confirm the list of observables       
   """,
 
-  "name: You must assign a unique name to the observable instance in the 'name' field. Do not ask the user for this value.",
-
-  """user_info: In the 'user_info' field, you must summarize any additional information provided by the user regarding the observable. Record only the information that the user has clearly provided about that specific instance of the observable. Do not ask the user for this value.
+  """user_info: In the 'user_info' field, you must summarize any additional information provided by the user regarding the observable. Record only the information that the user has clearly provided about that specific instance of the observable. NEVER ask the user for this value.
 
   Examples include:
   – required propagators

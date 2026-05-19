@@ -328,16 +328,19 @@ Current scratchpad contents
     check_param_rules_header = """    -------------------------
     Specific parameter rules
     -------------------------
-    These rules apply to specific parameters. If the rule for a parameter states that the value should be chosen by the agent, do not include this parameter in your checks.
+    These rules apply to specific parameters. Follow the rules that apply to the instantiation of object instances and for identifying the values of the parameters.
+    If the rule for a parameter states that the value should be chosen by the agent, do not include it in your checks.
     """ if len(parameter_rules) > 0 else ""
 
     
     check_complete_sys = """
     You must check the message history and the scratchpad contents to determine if the user has provided answers to all fields in the following schema:
     """ + json.dumps(structured_output_model.model_json_schema()) + f"""
-    Identify all parameters that the user has not specified and output them into the missing_parameters field of your output.
+    Identify all parameters that the user must specify and has not yet specified and output them into the missing_parameters field of your output.
     If the user has specified all parameters, set missing_parameters to an empty list
 
+    In cases where a list of structures is required, identify how many instances are required and for each one confirm that all of the required parameters have been specified.
+    
     -----------------------
     Scratchpad content
     -----------------------

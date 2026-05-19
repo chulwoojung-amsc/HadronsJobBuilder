@@ -69,10 +69,17 @@ Previous agent interactions have identified a set of observables and their requi
         """sources:
           
   Perform the following workflow:
-    1) If the user has not already done so in their previous responses, ask the user to specify what source *types* they wish to use for which propagators. This question should not be specific to one observable or propagator; rather you should allow the user the freedom to specify information that could apply to multiple or even all propagators. In your question, list the sources that you support but do not list their associated parameters. Do not ask the user to provide parameters at this stage.
+    1) Check the message history to see if the source types of the required propagators has been specified.
 
-       For example, "Specify the sources required for the calculation (supported options: <OPTIONS>)."
+       If the source types have not yet been specified:
+         - ask the user to specify what source *types* they wish to use for which propagators. This question should not be specific to one observable or propagator; rather you should allow the user the freedom to specify information that could apply to multiple or even all propagators. In your question, list the sources that you support but do not list their associated parameters.
+           For example, "Specify the sources required for the calculation (supported options: <OPTIONS>)."
+         - Do not ask the user to provide parameters at this stage.
+          
 
+       If the source types have been specified:
+         - indicate to the user what source types you have identified and ask them if this is correct.
+         - take note of any additional information about the parameters of those sources that is contained in the message history, e.g. source timeslices or locations 
     2) Identify the set of source instances required for the calculation according to the rules below.
     3) Instantiate a SourceConfig instance for each
 
