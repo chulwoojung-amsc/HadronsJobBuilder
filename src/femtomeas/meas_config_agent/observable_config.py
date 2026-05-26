@@ -40,36 +40,46 @@ def validateProps(prop_names, state):
     return (True,"")
 
 
+class Meson2ptInstance(BaseModel):
+    """An instance of a calculation of a meson two-point function with a specific propagator combination"""
+    propagators : Tuple[str,str] = Field(..., description="The tags of the propagators used to compute the observable")
+    name: str = Field(..., description="The name/tag of the observable instance")        
+
 class Meson2ptConfig(BaseModel):
     """A meson two-point function or "correlator"."""    
     type: Literal["meson2pt_config"] = "meson2pt_config"
-    
-    propagators : Tuple[str,str] = Field(..., description="The tags of the propagators used to compute the observable")
+
+    instances: List[Meson2ptInstance] = Field(..., description="Instances of this observable with different combinations of propagators")
     sink_gammas: List[Gammas] = Field(...,description="The list of Gamma-matrix combinations to use at the sink")
     source_gammas: List[Gammas] = Field(...,description="The list of Gamma-matrix combinations to use at the sink")
     
-    def setXML(self, name, xml):
+    def setXML(self, xml):
         gammas_snk_src = ""
         for gsnk in self.sink_gammas:
             for gsrc in self.source_gammas:
                 gammas_snk_src = gammas_snk_src + f"({gsnk} {gsrc})"
-        
-        #NB: gamma5-hermiticity used on q2
-        opt = xml.addModule(name, "MContraction::Meson")
 
-        HadronsXML.setValues(opt, [ ("q1", self.propagators[0]), ("q2", self.propagators[1]), ("gammas", gammas_snk_src), ("sink", "point_sink_zerop"), ("output",f"{name}.out") ])
+        for instance in self.instances:                
+            #NB: gamma5-hermiticity used on q2
+            opt = xml.addModule(instance.name, "MContraction::Meson")
+            HadronsXML.setValues(opt, [ ("q1", instance.propagators[0]), ("q2", instance.propagators[1]), ("gammas", gammas_snk_src), ("sink", "point_sink_zerop"), ("output",f"{instance.name}.out") ])
        
     def check(self, state):
-        return validateProps(self.propagators,state)
-    
+        result = True
+        reason = ""
+        for instance in self.instances:        
+            r = validateProps(instance.propagators,state)
+            if not r[0]:            
+                result = False
+                reason = reason + "\n" + r[1]
+        return (result, reason)
    
 class ObservableConfig(BaseModel):
     """An instance of an observable."""
-    name: str = Field(..., description="The name/tag of the observable instance")        
     obs: Union[Meson2ptConfig] = Field(...,description="The observation instance and configuration.", discriminator='type')
 
     def setXML(self, xml):
-        self.obs.setXML(self.name, xml)
+        self.obs.setXML(xml)
 
     def check(self, state):
         return self.obs.check(state)
@@ -89,34 +99,38 @@ def configureObservables(model, state, user_interactions: list[BaseMessage]) -> 
 
   For every ObservableInfo in the list contained within the message history:
     1. Parse the user information and background knowledge for the observable
-    2. Determine how many ObservableConfig instances are required to compute the observable for all different parameter combinations specified by the user. Follow the rules below.
+    2. Determine the ObservableConfig instances required to compute all observable types specified by the user. Follow the rules below.
     3. Instantiate the ObservableConfig instances, populate their parameters and add them to 'observable_configs',
 
   Rules for ObservableConfig instances:
-  - A separate ObservableConfig is required for each unique combination of parameters, even if the observable itself is the same. For example, if the user wants to compute the pion 2pt function with two different combinations of propagators, create two separate instances of ObservableConfig.
+  - A separate ObservableConfig is required for each unique combination of parameters other than propagators (these are treated separately using the "instances" parameter), even if the observable class is the same. For example, if the user wants to compute the pion and vector two-point functions, create two instances of ObservableConfig, one for the pion and one for the vector. 
   - Your list must include every observable in the list and only those. Do not invent observables, do not combine observables, and do not add details that are not explicitly provided by the user.
-  - Do not invent or infer any information not explicitly obtained from the message history.
-  - Do not invent names for propagators, use only those assigned to existing propagators in your message history.""",
+  - Do not invent or infer any information not explicitly obtained from the message history.""",
 
-    """ObservableConfig.name:
+    """Meson2ptConfig.instances:
+  - Create a different instance for each unique combination of propagators
+  """,
+
+    """Meson2ptInstance.name:
   - You must assign a unique tag/name to the instance. Do not ask the user for this parameter
   - Never use the same tag for different instances.
-  - The tag should include the observable type and enough of the parameter values to uniquely distinguish it among the other ObservableConfig instances, prefering shorter tags if possible.""",
+  - The tag should include the observable type and enough of the parameter values to uniquely distinguish it among the other instances, prefering shorter tags if possible.""",
                        
-    """Meson2ptConfig.sink_gammas and Meson2ptConfig.source_gammas :
-    - These are lists of Gamma-matrix combinations for the sink and source locations, respectively.
-    - If the user has not previously provided these parameters, perform the following workflow:
-      1) Based upon the observable type and other user-provided information, attempt to identify the special "mesonSpecialKeywords" keywords that describe the meson states at the source and sink. You can use the same keyword for the source and sink mesons unless the user has specified otherwise.
+    """Meson2ptInstance.propagators:
+  - Use the message history and the skills descriptions of the observables to identify the propagators required to compute this observable and note their 'name' fields. Use only the names of propagators, not of other types of instance (e.g. sources, solvers, actions)
+  - Do not invent names for propagators, use only those assigned to existing propagators in your message history.""",
+                       
+    """Meson2ptConfig.sink_gammas and Meson2ptConfig.source_gammas:
+  - These are lists of Gamma-matrix combinations for the sink and source locations, respectively.
+  - If the user has not previously provided these parameters, perform the following workflow:
+    1) Based upon the observable type and other user-provided information, attempt to identify the special "mesonSpecialKeywords" keywords that describe the meson states at the source and sink. You can use the same keyword for the source and sink mesons unless the user has specified otherwise.
 
-      2) - If you are able to identify the keywords, you must describe the keywords you identified for both source and sink to the user, and ask them to confirm. Ensure you specify both source and sink keywords even if they are the same. Do not ask more than one question at a time. You can ask the user to confirm multiple keywords at once, but only in the form of a single question.
-         - If you are *not* able to identify the keywords, ask the user to either choose the keywords or else manually specify the lists of Gamma-matrix combinations at the source and sink
+    2) - If you are able to identify the keywords, you must describe the keywords you identified for both source and sink to the user, and ask them to confirm. Ensure you specify both source and sink keywords even if they are the same. Do not ask more than one question at a time. You can ask the user to confirm multiple keywords at once, but only in the form of a single question.
+       - If you are *not* able to identify the keywords, ask the user to either choose the keywords or else manually specify the lists of Gamma-matrix combinations at the source and sink
 
-      3) - If you have identified or have been given the keywords, you must call the getMesonGammasTool tool to obtain the list of Gamma-matrix combinations for the source and sink. 
-         - Otherwise, if the user specified the Gamma-matrix combinations, use those to populate sink_gammas and source_gammas and finish this workflow
-         - Never guess the gamma matrix combinations""",
-
-    """*.propagators (where * applies to any observable type that involves propagators:
-  - Use the message history and the skills descriptions of the observables to identify the propagators required to compute this observable and note their 'name' fields. Use only the names of propagators, not of other types of instance (e.g. sources, solvers, actions)"""
+    3) - If you have identified or have been given the keywords, you must call the getMesonGammasTool tool to obtain the list of Gamma-matrix combinations for the source and sink. 
+       - Otherwise, if the user specified the Gamma-matrix combinations, use those to populate sink_gammas and source_gammas and finish this workflow
+       - Never guess the gamma matrix combinations"""
                        ]
 
     tools = [getMesonGammasTool]
