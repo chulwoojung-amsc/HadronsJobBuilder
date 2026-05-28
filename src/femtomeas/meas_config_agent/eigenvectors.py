@@ -117,7 +117,17 @@ class EigenSolverConfig(BaseModel):
 class EigenSolversConfig(BaseModel):
     solvers: List[EigenSolverConfig] = Field(...,description="The list of eigensolver instances")
 
-        
+    def check(self, state):
+        val=True
+        reason=""
+        for i in range(len(self.solvers)):
+            p = solvers[i].check(state)
+            if not p[0]:
+                val=False
+                reason += f"\nsolvers[{i}] ({self.solvers[i].name}): {p[1]}"
+        return (val,reason)
+    
+    
 def setupEigenSolvers(model, state, user_interactions: list[BaseMessage]) -> EigenSolversConfig:
     """
     Setup (optional) eigensolvers

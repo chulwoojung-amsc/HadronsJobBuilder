@@ -12,8 +12,7 @@ from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from femtomeas.agent_common.common import *
 from .hadrons_xml import HadronsXML
 from femtomeas.agent_common.agent_base import parameterAgent
-
-Gammas = Literal["MinusGamma5", "Gamma5", "MinusGammaT", "GammaT", "MinusGammaTGamma5", "GammaTGamma5", "MinusGammaX", "GammaX", "MinusGammaXGamma5", "GammaXGamma5", "MinusGammaY", "GammaY", "MinusGammaYGamma5", "GammaYGamma5", "MinusGammaZ", "GammaZ", "MinusGammaZGamma5", "GammaZGamma5", "MinusIdentity", "Identity", "MinusSigmaXT", "SigmaXT", "MinusSigmaXY", "SigmaXY", "MinusSigmaXZ", "SigmaXZ", "MinusSigmaYT", "SigmaYT", "MinusSigmaYZ", "SigmaYZ", "MinusSigmaZT", "SigmaZT"]
+from .meas_agent_common import Gammas
 
 mesonSpecialKeywords = Literal["pion","kaon","pseudoscalar","vector","axial-vector"]
 
@@ -65,8 +64,14 @@ class Meson2ptConfig(BaseModel):
             HadronsXML.setValues(opt, [ ("q1", instance.propagators[0]), ("q2", instance.propagators[1]), ("gammas", gammas_snk_src), ("sink", "point_sink_zerop"), ("output",f"{instance.name}.out") ])
        
     def check(self, state):
+        print("CHECK CALLED")
         result = True
         reason = ""
+
+        if len(self.sink_gammas) == 0 or len(self.source_gammas) == 0:
+            result = False
+            reason += "\nBoth source and sink must have at least one Gamma-matrix combination"
+        
         for instance in self.instances:        
             r = validateProps(instance.propagators,state)
             if not r[0]:            
@@ -87,6 +92,17 @@ class ObservableConfig(BaseModel):
 class ObservablesConfig(BaseModel):
     observable_configs: List[ObservableConfig] = Field(...,description="The list of observable instances and their configurations")
 
+    def check(self, state):
+        val=True
+        reason=""
+        for i in range(len(self.observable_configs)):
+            p = self.observable_configs[i].check(state)
+            if not p[0]:
+                val=False
+                reason += f"\nobservable_configs[{i}] ({self.observable_configs[i].obs.type}): {p[1]}"
+        return (val,reason)
+
+    
 
 def configureObservables(model, state, user_interactions: list[BaseMessage]) -> ObservablesConfig:
     role = """for building a list of lattice QCD observable instances and their associated parameters based on the conversation history.
@@ -118,7 +134,9 @@ def configureObservables(model, state, user_interactions: list[BaseMessage]) -> 
                        
     """Meson2ptInstance.propagators:
   - Use the message history and the skills descriptions of the observables to identify the propagators required to compute this observable and note their 'name' fields. Use only the names of propagators, not of other types of instance (e.g. sources, solvers, actions)
-  - Do not invent names for propagators, use only those assigned to existing propagators in your message history.""",
+  - Do not invent names for propagators, use only those assigned to existing propagators in your message history.
+  - You MUST ensure the order of the two propagators in the Tuple matches the role of the two quarks. For example, if the user says "prop_1" should be used as the first (or incoming) quark, ensure it is the first entry.""",
+                       
                        
     """Meson2ptConfig.sink_gammas and Meson2ptConfig.source_gammas:
   - These are lists of Gamma-matrix combinations for the sink and source locations, respectively.
@@ -130,10 +148,11 @@ def configureObservables(model, state, user_interactions: list[BaseMessage]) -> 
 
     3) - If you have identified or have been given the keywords, you must call the getMesonGammasTool tool to obtain the list of Gamma-matrix combinations for the source and sink. 
        - Otherwise, if the user specified the Gamma-matrix combinations, use those to populate sink_gammas and source_gammas and finish this workflow
-       - Never guess the gamma matrix combinations"""
+       - Never guess the gamma matrix combinations
+       - These lists must always contain one or more Gamma-matrix combination; they can never be empty."""
                        ]
 
     tools = [getMesonGammasTool]
     tool_rules = []
     
-    return parameterAgent(model, ObservablesConfig, role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, input_messages=user_interactions)
+    return parameterAgent(model, ObservablesConfig, role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, input_messages=user_interactions, output_check_kwargs = {"state" : state })

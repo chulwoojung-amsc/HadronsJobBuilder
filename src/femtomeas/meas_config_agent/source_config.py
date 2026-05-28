@@ -14,6 +14,7 @@ from .hadrons_xml import HadronsXML
 import json
 from femtomeas.agent_common.common import *
 from femtomeas.agent_common.agent_base import parameterAgent
+from .meas_agent_common import Gammas
 
 class PointSource(BaseModel):
     """A point or single-location source"""
@@ -37,11 +38,27 @@ class WallSource(BaseModel):
         opt = xml.addModule(name,"MSource::Wall")
         HadronsXML.setValues(opt, [ ("tW",self.timeslice), ("mom", "0. 0. 0. 0." if self.momentum == None else spaceSeparateSeq(self.momentum) ) ])
 
-
+class SeqGammaSource(BaseModel):
+    """A sequential propagator source where a source is constructed from the slice of a propagator between two timeslices with a specific gamma matrix structure and momentum,
+       src_x = q_x * theta(x_3 - tA) * theta(tB - x_3) * gamma * exp(i x.mom)
+    """
+    type: Literal["seq_gamma"] = "seq_gamma"
+    t_a : int = Field(..., description="Start timeslice of sequential source")
+    t_b : int = Field(..., description="End timeslice of sequential source")
+    gamma: Gammas = Field(...,description="Gamma-matrix structure of the sequential source")
+    momentum: Optional[Tuple[float,float,float,float]] = Field(
+        None, description="Optional four-momentum"
+    )
+    q: str = Field(..., description="The name of the propagator to construct the sequential source from")
+    prop_info: str= Field(...,description="Other information associated with the input propagator provided by the user")
+    
+    def setXML(self,name,xml):
+        pass
+    
     
 class SourceConfig(BaseModel):
     name : str = Field(..., description="The name/tag for the source")
-    source: Union[PointSource, WallSource] = Field(
+    source: Union[PointSource, WallSource,SeqGammaSource] = Field(
         ..., description="Information about the source.", discriminator='type'  # Each item must have a 'type' field. Valid values are: 'point', 'wall'  
     )
     user_info: str = Field(..., description="Additional information (if any) provided by the user on what observables/propagators this source will be used for")
@@ -82,7 +99,8 @@ Previous agent interactions have identified a set of observables and their requi
          - take note of any additional information about the parameters of those sources that is contained in the message history, e.g. source timeslices or locations 
     2) Identify the set of source instances required for the calculation according to the rules below.
     3) Instantiate a SourceConfig instance for each
-
+    4) If the user wants to use sequential propagators, you must work with the user to identify the source for the input propagator.
+        
   The rules for identifying the required source instances are as follows:
   - Create a separate entry for each unique collection of source parameters, for example if the user specified propagators with point sources at [0,0,0,0] and [12,24,12,24], create two separate source instances with different source locations.
   - Create a separate entry for each source instance, even if the same source type appears multiple times with different parameters.
@@ -97,13 +115,24 @@ Previous agent interactions have identified a set of observables and their requi
 
 
       """SourceConfig.user_info:
-  - For the 'user_info' field, you must summarize any information relevant to what observables/propagators this source will be used for provided by the user. Do not ask the user to provide this summary.
+  - For the 'user_info' field, you must summarize any information relevant to what observables/propagators this source will be used for provided by the user. Never ask the user to provide this parameter.
   - It is important that any positional information about the propagator be included, for example whether it is the first or second propagator of a two-point function, or if it is a 'spectator' quark in a baryon.
   - If the user does now specify any details, use an empty string. For example, if the user specifies that this source will be used for light quark propagators, enter "use for all light quark propagators" in user_info."""
       
       """SourceConfig.source:
-  - Insert the appropriate schema for the source type"""
+  - Insert the appropriate schema for the source type""",
 
+      """SeqGammaSource.q, SeqGammaSource.prop_info:
+  Perform the following workflow:
+    1) Explain to the user that they can provide a specific propagator name that will be used as a handle, or else they can let the agent decide on the name. Tell them that they can provide other relevant information that will allow them to distinguish between different input propagators.
+    2) If the user specified a propagator name, record it as the "q" parameter. If they let you decide, you must choose a new, unique name for that propagator and record it instead. The name you choose must differ from the name of the sequential source or any other source.
+    3) In the "prop_info" field, record any other information provided by the user about the propagator that can be used to uniquely identify it, such as its underlying source type, mass, action, etc. If no further information is given by the user, do not prompt them to do so again; instead use an empty string for "prop_info".
+    4) You MUST write to your scratchpad using scratchPadWrite tool a note to yourself that that you need to determine what the source for the input propagator is. Prefix this note with "TODO". In this note, include the name (the value of "q") as well as the source type and other details if available. 
+      
+  Do not confuse sources with propagators. Propagators are constructed from sources, and sequential propagators use the sink of a propagator to construct a source, thus extending the propagator's quark flow to another location.""",
+
+      """SeqGammaSource.t_a, SeqGammaSource.t_b: Do not ask for these parameters separately. Instead, explain that t_a and t_b denote the start and end timeslices of the sequential source, and that they can be equal. Ask for both parameters to be specified together."""
+        
     ]
     
     additional_user_query_rules = [    

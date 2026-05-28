@@ -5,6 +5,7 @@ from femtomeas.workflow_manager.manager_config import readManagerConfigFile, set
 from femtomeas.workflow_manager.manager import JobManager
 from femtomeas.workflow_manager.hadrons_workflow import hadronsSubmissionAgent
 from femtomeas.agent_common.agent_config import readI2APIkey
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
 import argparse
 
@@ -83,7 +84,24 @@ if __name__ == "__main__":
         api_key = readI2APIkey(config.agent.i2api_key_path)
     )
 
+    # nemotron = ChatNVIDIA(
+    #     model="nemotron-super-3",
+    #     base_url="https://api.i2-core.american-science-cloud.org/v1",
+    #     temperature=0,
+    #     api_key = readI2APIkey(config.agent.i2api_key_path)
+    # )
+
+    oss_20b = ChatOpenAI(
+        model="gpt-oss-20b",
+        base_url="https://api.i2-core.american-science-cloud.org/",
+        temperature=0,
+        api_key = readI2APIkey(config.agent.i2api_key_path)
+    )
+
+    
     llm = amsc_llm_0t
+    #llm = nemotron
+    #llm = oss_20b
     
     reload_checkpoint_file = args.reload_checkpoint if args.reload_checkpoint is not None else "ckpoint_state.json" #NB: argparse default argument (const) is only used if the arg is specified but a value not provided, not when the arg is not specified
     reload_checkpoint = args.reload_checkpoint is not None and os.path.exists(reload_checkpoint_file)

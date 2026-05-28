@@ -74,6 +74,20 @@ def scratchPadRead()->str:
 
 main_agent_done = False
 
+
+params_struct = ""
+
+@tool
+def setParamsStruct(contents: str)->None:
+    """Set the contents of the output params struct
+Args:
+  contents: The structure in JSON format
+"""
+    global params_struct
+    params_struct = contents
+    print("PARAMS STRUCT WRITE",contents)
+
+    
 @tool
 def mainAgentDone()->None:
     """Call this tool to signal that the agent workflow is complete. Ensure all parameters have been specified before calling"""
@@ -192,12 +206,15 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
                    tool_rules : List[str] = [],
                    parameter_rules : List[str] = [],
                    input_messages = [ HumanMessage("Start your workflow") ],
-                   additional_user_query_rules = []
+                   additional_user_query_rules = [],
+                   output_check_kwargs = {}
                    ):
 
     global main_agent_done
     main_agent_done = False
     scratch.clear()
+    global params_struct
+    params_struct = ""
     
     output_type_name = type(structured_output_model).__name__
     param_rules_header = """    -------------------------------------------
@@ -218,24 +235,30 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     sys = f"""
     You are a conversational agent responsible for {role}
 
-    To output text to the user, output a message containing the text for the user (questions, answers). The user's response will be contained in the next message. Your output *must* include either
+    To output text to the user, return a message containing the text for the user (questions, answers). The user's response will be contained in the following message. Your output *must* include either:
     1) ONE question
     2) ONE answer to the user's previous question AND ONE further question
+    3) No content and a single call to the mainAgentDone tool indicating that your workflow is complete.
     NEVER output text not intended for the user such as notes-to-self. See the output rules below.
     
     The overall goal of your conversation is to aid the user in choosing values for each for the fields in the schema {output_type_name} (provided below).
   
-    To formulate the response, you are free to call appropriate tools to obtain extra information to help the user.
-
     To identify if the user has chosen a value, confirm that the user's response is a statement describing a valid value for the parameter.
 
-    You must keep notes of choices made by the user using the scratchPadWrite tool. Refer to the scratchpad rules below.
+    You must always keep notes of choices made by the user using the scratchPadWrite tool. Refer to the scratchpad rules below.
+
+    You must always record the currently-known contents of the output {output_type_name} JSON structure using the setParamsStruct tool. When your workflow begins the output structure should be empty. Refer to the "Recording JSON output" rules below
     
     Obtain the values for the parameters in the order they appear in {output_type_name}
     
     If the user asks a question, you must answer it before asking any further questions
 
-    Once the user has specified all parameters, call the mainAgentDone tool to signal completion. Never output the completed JSON. Never ask the user to confirm the complete set of parameters.
+    Once the user has specified all parameters, perform the following workflow:
+    1) Check the message history, scratch logs and the current JSON structure to ensure that no unknown parameters remain (e.g. those marked as <UNKNOWN> in the current output struct)
+    2) If there are unknown parameters, continue your conversation with the user.
+       If there are no unknown parameters call the mainAgentDone tool to signal completion.
+ 
+    If your workflow is complete, never ask the user to confirm the complete set of parameters. Never tell the user that your workflow is complete or that you are done.
 
     DO NOT PERFORM ANY PLANNING STEPS
 
@@ -243,11 +266,11 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     -----------------------------------------
     Output rules
     -----------------------------------------
+    - Your output to the user must include a question.
     - Never ask more than one question at a time. Always wait for the user to respond before asking your next question.
     - In your response to the user, *never* include any reasoning, chain-of-thought or notes-to-self. Only ever include a single question or an answer followed by a question. For example, never output "We need to wait for user response."
     - If you do decide to include reasoning in your output despite these explicit instructions *not to*, you may receive an error message. Do not apologize, simply generate the correct output
     - If the user has not responsed to your question, do not think ahead to the next question. Wait for the user to respond.
-    - Do not output the completed JSON schema. Simply terminate your workflow by calling the mainAgentDone tool when all the parameters have been chosen by the user.
     
     -------------------------------------------
     General Parameter Rules:
@@ -259,8 +282,8 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     -------------------------------------------
     Tool Rules:    
     -------------------------------------------
-    - Use scratchPadWrite to store user choices and other notes.
-    - The current scratchpad content is included in your system prompt
+    - Use scratchPadWrite to store user choices and other notes. The current scratchpad content is included in your system prompt
+    - Use setParamsStruct to document the current best knowledge of the output struct. The current params struct is included in your system prompt.
     - If a tool provides a list of valid responses, only accept values from among that list as valid choices by the user. If you list the values, ensure you only list those returned by the tool; never make up entries.
 {promptStringList(tool_rules,4)}
 
@@ -268,14 +291,26 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     Scratchpad rules:
     -------------------------------------------
     - Use the scratchpad to take notes of all choices made by the user.
-    - You must write a note for *every* user response that contains a choice
+    - You must write a note for *every* user decision
     - Do not call scratchPadWrite if the user asks you a question.
     - Do not record questions that the user asks to you or notes on your responses. Only record choices.
     - The note must include all choices that the user has made that are not currently noted in the scratchpad
     - Always write a note if the user has made a choice of a parameter value, even if you don't yet have all the parameter values. Just record what you have
     - Ensure that you also take note of the context. For example, if you are recording parameter choices for a specific propagator, note which propagator thse values correspond to.
     - Do not repeat information in the scratchpad. Before calling scratchPadWrite, check the current scratchpad content and only add information if the scratchpad either does not contain it or the new content supercedes the existing.
+    - You can also use the scratchpad to record TODO notes for yourself to help you plan.
     - The scratchpad is also available to the automated validation steps performed after your workflow. You can thus use the scratchpad to respond to validation or missing parameter errors to clarify
+
+    -------------------------------------------
+    Recording JSON output rules
+    ------------------------------------------    
+    - As your conversation with the user progresses, you must record the current state of the output {output_type_name} JSON using the setParamsStruct. Never specify the parameters of a different data structure, only {output_type_name}.
+    - The structure must follow the {output_type_name} schema for all fields and types, with the exception of unknown parameters. You must include all fields, even if they can have default values.
+    - For parameters that the user has not yet specified you must include the field but assign the value "<UNKNOWN>", even if the parameter is not a string parameter.
+    - You must call this tool with the updated structure *every time* the user makes a choice or specifies/decides a parameter value, even if some parameters are still unknown. Never respond to the user without calling this tool first UNLESS you are answering a question from the user.
+    - Always call this tool when the user specifies a parameter value.
+    - You must follow all rules (general and specific) provided in this prompt regarding the parameters you record. 
+    - If recording a parameter that belongs to one of a list of structure instances and you don't yet know how many instances will be needed, instantiate a single instance and record the parameter there.
     
     -------------------------------------------
     User Query rules:
@@ -317,11 +352,17 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
 ---------------------------
 Current scratchpad contents
 ---------------------------        
-{listEnumerateStr(scratch)}"""
+{listEnumerateStr(scratch)}
+
+-----------------------------
+Current output params struct
+-----------------------------
+{params_struct}        
+        """
         #print("SCRATCHPAD", listEnumerateStr(scratch))
         return prompt
     
-    all_tools = tools.copy() + [scratchPadWrite,mainAgentDone]
+    all_tools = tools.copy() + [scratchPadWrite,mainAgentDone,setParamsStruct]
     agent = create_agent(model=llm_model, tools=all_tools, middleware=[system_prompt])
 
 
@@ -329,29 +370,46 @@ Current scratchpad contents
     Specific parameter rules
     -------------------------
     These rules apply to specific parameters. Follow the rules that apply to the instantiation of object instances and for identifying the values of the parameters.
-    If the rule for a parameter states that the value should be chosen by the agent, do not include it in your checks.
     """ if len(parameter_rules) > 0 else ""
 
     
-    check_complete_sys = """
-    You must check the message history and the scratchpad contents to determine if the user has provided answers to all fields in the following schema:
-    """ + json.dumps(structured_output_model.model_json_schema()) + f"""
-    Identify all parameters that the user must specify and has not yet specified and output them into the missing_parameters field of your output.
-    If the user has specified all parameters, set missing_parameters to an empty list
+    check_complete_sys = f"""You are an agent responsible for checking whether the user has chosen values of all parameters needed to populate an output JSON structure.
+        
+    You will be provided with a message history, scratchpad notes and a possibly partially-complete JSON structure from a conversation between the user and another agent whose responsibility is "{role}". 
+    
+    Your task is to check these inputs to determine if the user has provided answers to all fields in the following schema:
+    { json.dumps(structured_output_model.model_json_schema()) }
 
-    In cases where a list of structures is required, identify how many instances are required and for each one confirm that all of the required parameters have been specified.
+    Perform the following workflow:
+    1) There are two classes of parameter; those the agent must provide and those the user must provide. Identify the set of parameters that the user must provide.
+    2) Check the message history, scratchpad notes and the agent's partially-completed JSON structure to identify which of these parameters the user has not chosen.
+    3) Output those missing parameters in your output missing_parameters list.
+    
+    -----------------------
+    General parameter rules
+    ------------------------
+    - Identify all parameters that the user must specify and has not yet specified and output them into the missing_parameters field of your output.
+    - For list parameters, only check the existing list entries. Include the list element index in the name of missing parameters.    
+    - If a parameter has a rule that its value should be chosen by the agent, DO NOT include it in your checks. DO NOT include these parameters in your output.
+    - If the user has specified all user-specifiable parameters, set missing_parameters to an empty list.
+    - In cases where a list of structures is required, identify how many instances are required and for each one confirm that all of the required parameters have been specified.
     
     -----------------------
     Scratchpad content
     -----------------------
     {json.dumps(scratch)}
+
+    -----------------------
+    Partial JSON output
+    -----------------------
+    {params_struct}
     
 {check_param_rules_header}    
 
 {promptStringList(parameter_rules,4)}
 
     ------------------------
-    Output rules
+    Your output rules
     ------------------------       
     Your output must be provided according to the following schema:
     """ + json.dumps(ParameterCheck.model_json_schema())
@@ -362,7 +420,7 @@ Current scratchpad contents
     output_sys = f"""
     You are an agent responsible for inserting information from the user into a structured output with the schema below.
 
-    Use your message history and the scratchpad content to identify the user's decision for a parameter
+    Use the provided message history, scratchpad content and the partially-complete JSON structure to identify the user's decision for each parameter
 
     Determine whether the user has chosen a value by identifying whether the user's response is a statement describing a valid value for the parameter.
 
@@ -374,6 +432,11 @@ Current scratchpad contents
     Scratchpad content
     -----------------------
     {json.dumps(scratch)}
+
+    -----------------------
+    Potential JSON output
+    -----------------------
+    {params_struct}
     
 {check_param_rules_header}    
 
@@ -406,7 +469,7 @@ Current scratchpad contents
 
             #Automatic validation
             try:            
-                valid = obj.check()
+                valid = obj.check(**output_check_kwargs)
                 if not valid[0]:
                     print("VALIDATION FAIL",valid)
                     user_interactions.append(HumanMessage(f"Your previous response failed validation due to: {valid[1]}"))

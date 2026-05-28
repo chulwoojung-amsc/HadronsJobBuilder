@@ -20,7 +20,7 @@ class Meson2ptObs(BaseModel):
       return """- Meson two-point functions:
   Meson two-point functions are typically used to compute particle masses or decay constants (e.g. f_pi).
 
-  This observable requires two propagators, that are contracted together at some timeslice-localized sink. The first propagator argument has color flow from source to sink, and the second propagator argument has gamma^5-hermiticity applied to it such that the color flow is from sink to source.
+  This observable requires two propagators, that are contracted together at some timeslice-localized sink. The first propagator argument has quark flow from source to sink, and the second propagator argument has gamma^5-hermiticity applied to it such that the quark flow is from sink to source. We often refer to these propagators by the direction of quark flow into the vertex, i.e. "incoming" for the first quark and "outgoing" for the second.
 
   Pion and kaon correlators are both pseudoscalar two-point functions, the difference being that the pion usually has both quarks with the same (light) mass, whereas the kaon has one heavy and one light quark."""
    
@@ -78,14 +78,14 @@ def identifyObservables(model, user_interactions: list[BaseMessage]) -> Observab
   - Do not ask the user to confirm the list of observables       
   """,
 
-  """user_info: In the 'user_info' field, you must summarize any additional information provided by the user regarding the observable. Record only the information that the user has clearly provided about that specific instance of the observable. NEVER ask the user for this value.
+  """user_info: In the 'user_info' field, you must summarize any additional information provided by the user regarding the observable. Record only the information that the user has clearly provided about that specific instance of the observable. NEVER ask the user for this value. NEVER ask the user to provide additional information. 
 
   Examples include:
   – required propagators
   – operator insertions
   – quantum numbers or kinematic parameters
   – anything else explicitly tied to the computation
-  If the user did not specify information for an observable, leave its user_info field empty rather than guessing or filling in defaults.""",
+  If the user did not specify extra information for an observable, leave the user_info field empty rather than guessing or filling in defaults. Never ask the user to provide additional information.""",
   
   "obs_type: Populate the 'obs_type' field with an object of type appropriate to the observable. If the user describes an observable that is not supported, you must describe to the user which observables you support and ask the user which ones they want."
 

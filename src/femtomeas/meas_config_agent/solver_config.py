@@ -18,8 +18,8 @@ class RBPrecCGsolver(BaseModel):
     """red-black preconditioned conjugate gradient (CG) solver"""
     type: Literal["RBPrecCG"] = "RBPrecCG"
     residual: float = Field(...,description="the solver tolerance, residual or stopping condition. Typical values are in the range 1e-6 to 1e-9")
-    maxIteration: NonNegativeInt = Field(10000,description="maximum number of solver iterations.")
-    guesser: str = Field("", description="guesser instance.")
+    maxIteration: NonNegativeInt = Field(...,description="maximum number of solver iterations.")
+    guesser: str = Field(..., description="guesser instance.")
     
     def setXML(self,name,action,xml):
         opt = xml.addModule(name,"MSolver::RBPrecCG")
@@ -81,13 +81,24 @@ Previous agent interactions have identified a set of observables and their requi
   - The tag should include the action name and enough of the parameter values to uniquely distinguish it among the other solver instances, prefering shorter tags if possible.""",
 
   #user_info
-      """SolverConfig.user_info: You must summarize any information relevant to what observables/propagators this solver will be used for provided by the user. Never ask the user to specify this summary
+      """SolverConfig.user_info: You must summarize any information relevant to what observables/propagators this solver will be used for provided by the user.
+  - NEVER ask the user to specify this parameter. NEVER ask the user for additional information.
   - It is important that any positional information about the propagator be included, for example whether it is the first or second propagator of a two-point function, or if it is a 'spectator' quark in a baryon.
   - If the user does not specify any details, use an empty string.
   - For example, if the user specifies that this solver will be used for light quark propagators, enter "use for all light quark propagators" in user_info.""",
 
   #guesser
-      """RBPrecCGsolver.guesser: Use the message history and user input to infer whether any of the existing eigensolver instances can be used to accelerate this solver by correlating this information with the user_info and other parameters of the eigensolvers, and if so use the eigensolver's name for the "guesser" parameter. Pay particular attention to the eigensolver's action_name parameter, which must be the same as the action associated with this propagator solver instance. Ask the user to confirm whether the inferred guesser is correct."""
+      """RBPrecCGsolver.guesser: This parameter currently supports using previously-computed eigenvectors to accelerate the solver
+
+      You must use the following workflow:
+   1) Check if any eigensolver instance exists with the same action name as this solver instance.
+   2) If no, set guesser to an empty string and terminate this workflow.
+      If yes,
+      2a) ask the user to confirm whether to use these specific eigenvectors for the guesser parameter of this solver.
+      2b) if they confirm, use the eigensolver's "name" parameter for the "guesser" parameter.
+          if they do not confirm, use an empty string.
+   Do not ask the user in general whether they would like to use eigenvectors if available. Only ask them to confirm the use of a specific set of eigenvectors for a specific solver."""
+      
       ]
 
     additional_user_query_rules = [

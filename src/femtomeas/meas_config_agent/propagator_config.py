@@ -35,7 +35,7 @@ You are responsible for identifying the lattice QCD propagators for the calculat
 
 A propagator instance has a 'source' and 'solver' field that must be set, respectively, to the name of one of the source and solver instances identified previously.
 
-First, identify the set of required propagators by first iterating over each of the previously identified observable instances noting how many propagators they require and other relevant information. Then, consider the message history to identify the source and solver combination that uniquely specifies each of the propagators needed for those observables. Do not specify more propagators than are required for the observables.
+First, identify the set of required propagators by first iterating over each of the previously identified observable instances noting how many propagators they require and other relevant information. Then, consider the message history to identify the source and solver combination that uniquely specifies each of the propagators needed for those observables. Also include propagators defined as inputs to sequential sources. Do not specify more propagators than are required for the observables.
 
 If more than one observable requires a propagator with the same source/solver combination, you must re-use the propagator; do not create more propagators than needed.
     
