@@ -4,8 +4,8 @@ from .api_general import setupWorkflowAgent
 from .hadrons import setHadronsInfo
 
 class WorkflowConfig(BaseModel):
-    sfapi_key_path: str = Field(..., description="The path to the Superfacility API key")
-    iriapi_key_path: str = Field(..., description="The path to the IRI API key (will be created if doesn't yet exist)")
+    sfapi_key_path: str | None = Field(None, description="The path to the Superfacility API key (not required for LOCAL api)")
+    iriapi_key_path: str | None = Field(None, description="The path to the IRI API key (not required for LOCAL api)")
     sandbox_directories: dict[str, str] = Field(..., description="A map of machine names to base sandbox directories")
 
 class HadronsConfig(BaseModel):

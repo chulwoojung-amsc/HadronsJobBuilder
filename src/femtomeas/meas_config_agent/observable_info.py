@@ -28,9 +28,48 @@ class Nucleon2ptObs(BaseModel):
    n_propagator: Literal[3] = Field(3, description="The required number of propagators")
    obs_info: Literal[""] = Field("", description="General information about this observable")
 
+# AUTO-GENERATED BEGIN
+class Scalar2ptObs(BaseModel):
+   """Scalar meson 2pt function (sigma, f0, a0). J^PC = 0^++."""
+   type: Literal["scalar2pt"] = "scalar2pt"
+   n_propagator: Literal[2] = Field(2, description="The required number of propagators")
+   obs_info: Literal[""] = Field("", description="General information about this observable")
+
+class Axialvector2ptObs(BaseModel):
+   """Axial vector meson 2pt function (a1, f1, b1). J^PC = 1^++."""
+   type: Literal["axialvector2pt"] = "axialvector2pt"
+   n_propagator: Literal[2] = Field(2, description="The required number of propagators")
+   obs_info: Literal[""] = Field("", description="General information about this observable")
+
+class Temporalvector2ptObs(BaseModel):
+   """Temporal vector meson 2pt function. J^PC = 1^--."""
+   type: Literal["temporalvector2pt"] = "temporalvector2pt"
+   n_propagator: Literal[2] = Field(2, description="The required number of propagators")
+   obs_info: Literal[""] = Field("", description="General information about this observable")
+
+class Axialtemporalvector2ptObs(BaseModel):
+   """Axial temporal vector meson 2pt function. J^PC = 1^+-."""
+   type: Literal["axialtemporalvector2pt"] = "axialtemporalvector2pt"
+   n_propagator: Literal[2] = Field(2, description="The required number of propagators")
+   obs_info: Literal[""] = Field("", description="General information about this observable")
+
+class Tensor2ptObs(BaseModel):
+   """Tensor meson 2pt function (h1, b1). Antisymmetric tensor gamma structures."""
+   type: Literal["tensor2pt"] = "tensor2pt"
+   n_propagator: Literal[2] = Field(2, description="The required number of propagators")
+   obs_info: Literal[""] = Field("", description="General information about this observable")
+
+class Delta2ptObs(BaseModel):
+   """Delta baryon 2pt function (spin-3/2). Uses spatial gamma interpolator."""
+   type: Literal["delta2pt"] = "delta2pt"
+   n_propagator: Literal[3] = Field(3, description="The required number of propagators")
+   obs_info: Literal[""] = Field("", description="General information about this observable")
+
+# AUTO-GENERATED END
+
 class ObservableInfo(BaseModel):
    """Information about an observable to be computed."""
-   obs_type: Union[Pion2ptObs,Vector2ptObs,Nucleon2ptObs] = Field(...,description="The observation type and important knowledge.", discriminator="type")
+   obs_type: Union[Pion2ptObs, Vector2ptObs, Nucleon2ptObs, Scalar2ptObs, Axialvector2ptObs, Temporalvector2ptObs, Axialtemporalvector2ptObs, Tensor2ptObs, Delta2ptObs] = Field(...,description="The observation type and important knowledge.", discriminator="type")
    user_info: str = Field(...,description="Any relevant information obtained from the user regarding the observable, such as "
                      "propagator masses, momenta, source/sink smearing, etc. "
                      "Use an empty string if no extra information is given.")

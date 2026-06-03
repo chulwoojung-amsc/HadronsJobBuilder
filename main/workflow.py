@@ -1,7 +1,9 @@
 import os
 from langchain_openai import ChatOpenAI
 from femtomeas.meas_config_agent import agent
-from femtomeas.workflow_manager.manager_config import readManagerConfigFile
+from femtomeas.workflow_manager.manager_config import readManagerConfigFile, parseManagerConfigStr
+from pathlib import Path
+import json
 from femtomeas.workflow_manager.manager import JobManager
 from femtomeas.workflow_manager.hadrons_workflow import enqueueStandardHadronsWorkflow
 
@@ -105,15 +107,18 @@ if __name__ == "__main__":
     #Start the job manager
     jman = None
     if args.execute_workflow is not None:
+        mgr_config = parseManagerConfigStr(Path(args.execute_workflow).read_text())
         readManagerConfigFile(args.execute_workflow)
         jman = JobManager("jobs.db")
         jman.start()
-        
-        if not args.skip_agent:
-            #For now we just use Perlmutter with 1 rank for simplicity
-            mpi = (1,1,1,1)
-            machine = "Perlmutter"
-            enqueueStandardHadronsWorkflow(state, jman, mpi, machine, "test_group", "amsc013_g", "debug", "300")
 
-        
+        if not args.skip_agent:
+            # Use the first machine listed in the config's sandbox_directories
+            machine = next(iter(mgr_config.workflow.sandbox_directories))
+            mpi = (1,1,1,1)
+            account = "" if machine == "Local" else "amsc013_g"
+            queue = "local" if machine == "Local" else "debug"
+            enqueueStandardHadronsWorkflow(state, jman, mpi, machine, "test_group", account, queue, "300")
+
+
         jman.stop() #will wait until the job queue is complete

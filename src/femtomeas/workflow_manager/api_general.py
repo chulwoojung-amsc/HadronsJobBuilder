@@ -15,9 +15,15 @@ elif globals.api_impl == "SF":
 elif globals.api_impl == "SPOOF":
     print("Using Spoof API")
     from .spoof_api import setupWorkflowAgent, remoteMkdir, uploadBytes, executeBatchJobCompat, getJobState, globusTransferStatus, globusCopyToMachine, globusCopyFromMachine, queryMachineStatus, getUserAccountProjects, getKnownMachines, getMachineQueues, remoteRun, downloadFile
+elif globals.api_impl == "LOCAL":
+    print("Using Local API")
+    from .local_api import setupWorkflowAgent, remoteMkdir, remoteMkdirUnsafe, uploadBytes, executeBatchJobCompat, getJobState, globusTransferStatus, globusCopyToMachine, globusCopyFromMachine, queryMachineStatus, getUserAccountProjects, getKnownMachines, getMachineQueues, remoteRun, downloadFile
 else:
     raise Exception("Unknown API implementation")
 
+
+if 'remoteMkdirUnsafe' not in dir():
+    remoteMkdirUnsafe = remoteMkdir
 
 def testExecutablePrivileges(machine: str)-> bool:
     try:

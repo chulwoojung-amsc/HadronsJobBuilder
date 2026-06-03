@@ -141,7 +141,24 @@ def submitHadronsJob(machine: str,
     mpi_str = sizesToGridArgList(mpi)
 
     ###################################
-    if machine == "Perlmutter":
+    if machine == "Local":
+        env = hadrons_info[machine].get("env", "")
+        mpi_launch = f"mpirun -np {ranks}" if ranks > 1 else ""
+        script = f"""#!/bin/bash
+set -e
+now=$(date)
+echo "Hadrons local job started at ${{now}}"
+cd {job_run_dir}
+{env}
+{mpi_launch} { hadrons_info[machine]["bin"] }/HadronsXmlRun {job_run_dir}/run.xml --mpi {mpi_str} --grid {grid_str} --threads 4 --log Iterative,Message,Error,Warning >> {job_run_dir}/run.log 2>&1
+now=$(date)
+echo "Hadrons local job completed at ${{now}}"
+"""
+        nodes = 1
+        ranks_per_node = ranks
+
+    ###################################
+    elif machine == "Perlmutter":
         if ranks < 4:
             bind="" #Entire node must be allocated for verbose,map_ldom
         else:
