@@ -1,0 +1,57 @@
+# Physics channel definitions for generate_observables.py
+#
+# Each entry produces one *Obs class in observable_info.py and one *Config
+# class in observable_config.py.
+#
+# Fields:
+#   name            - type literal used in Pydantic discriminators (e.g. "scalar2pt")
+#   hadrons_module  - Hadrons C++ module type (must exist in MContraction headers)
+#   n_propagators   - number of quark propagator inputs (2 for mesons, 3 for baryons)
+#   description     - human-readable description (used as class docstring)
+#   gammas          - literal gamma string passed to Hadrons XML <gammas> field
+#   gammas_axes     - alternative to gammas: script emits all N*N (A B) pairs
+
+# ---------------------------------------------------------------------------
+# Meson channels — MContraction::Meson
+# ---------------------------------------------------------------------------
+
+- name: scalar2pt
+  hadrons_module: MContraction::Meson
+  n_propagators: 2
+  description: "Scalar meson 2pt function (sigma, f0, a0). J^PC = 0^++."
+  gammas: "(Identity Identity)"
+
+- name: axialvector2pt
+  hadrons_module: MContraction::Meson
+  n_propagators: 2
+  description: "Axial vector meson 2pt function (a1, f1, b1). J^PC = 1^++."
+  gammas_axes: [GammaXGamma5, GammaYGamma5, GammaZGamma5]
+
+- name: temporalvector2pt
+  hadrons_module: MContraction::Meson
+  n_propagators: 2
+  description: "Temporal vector meson 2pt function. J^PC = 1^--."
+  gammas: "(GammaT GammaT)"
+
+- name: axialtemporalvector2pt
+  hadrons_module: MContraction::Meson
+  n_propagators: 2
+  description: "Axial temporal vector meson 2pt function. J^PC = 1^+-."
+  gammas: "(GammaTGamma5 GammaTGamma5)"
+
+- name: tensor2pt
+  hadrons_module: MContraction::Meson
+  n_propagators: 2
+  description: "Tensor meson 2pt function (h1, b1). Antisymmetric tensor gamma structures."
+  gammas_axes: [SigmaXT, SigmaXY, SigmaXZ, SigmaYT, SigmaYZ, SigmaZT]
+
+# ---------------------------------------------------------------------------
+# Baryon channels — MContraction::Baryon
+# ---------------------------------------------------------------------------
+
+- name: delta2pt
+  hadrons_module: MContraction::Baryon
+  n_propagators: 3
+  description: "Delta baryon 2pt function (spin-3/2). Uses spatial gamma interpolator."
+  gammas: "(CGX CGX)"
+  # NOTE: verify gamma string format against BaryonUtils.h before production use
