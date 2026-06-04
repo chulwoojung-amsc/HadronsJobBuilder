@@ -70,68 +70,35 @@ class Nucleon2ptConfig(BaseModel):
         return validateProps(self.propagators, state)
 
 # AUTO-GENERATED BEGIN
-class Scalar2ptConfig(BaseModel):
-    """Scalar meson 2pt function (sigma, f0, a0). J^PC = 0^++."""
-    type: Literal["scalar2pt"] = "scalar2pt"
-    propagators: tuple[str, str] = Field(..., description="The tags of the propagators used to compute the observable")
-
-    def setXML(self, name, xml):
-        mesonModuleXML(name, xml, "(Identity Identity)", self.propagators[0], self.propagators[1])
-
-    def validate(self, state):
-        return validateProps(self.propagators, state)
-
-class Axialvector2ptConfig(BaseModel):
-    """Axial vector meson 2pt function (a1, f1, b1). J^PC = 1^++."""
-    type: Literal["axialvector2pt"] = "axialvector2pt"
-    propagators: tuple[str, str] = Field(..., description="The tags of the propagators used to compute the observable")
-
-    def setXML(self, name, xml):
-        mesonModuleXML(name, xml, "(GammaXGamma5 GammaXGamma5)(GammaXGamma5 GammaYGamma5)(GammaXGamma5 GammaZGamma5)(GammaYGamma5 GammaXGamma5)(GammaYGamma5 GammaYGamma5)(GammaYGamma5 GammaZGamma5)(GammaZGamma5 GammaXGamma5)(GammaZGamma5 GammaYGamma5)(GammaZGamma5 GammaZGamma5)", self.propagators[0], self.propagators[1])
-
-    def validate(self, state):
-        return validateProps(self.propagators, state)
-
-class Temporalvector2ptConfig(BaseModel):
-    """Temporal vector meson 2pt function. J^PC = 1^--."""
-    type: Literal["temporalvector2pt"] = "temporalvector2pt"
-    propagators: tuple[str, str] = Field(..., description="The tags of the propagators used to compute the observable")
-
-    def setXML(self, name, xml):
-        mesonModuleXML(name, xml, "(GammaT GammaT)", self.propagators[0], self.propagators[1])
-
-    def validate(self, state):
-        return validateProps(self.propagators, state)
-
-class Axialtemporalvector2ptConfig(BaseModel):
-    """Axial temporal vector meson 2pt function. J^PC = 1^+-."""
-    type: Literal["axialtemporalvector2pt"] = "axialtemporalvector2pt"
-    propagators: tuple[str, str] = Field(..., description="The tags of the propagators used to compute the observable")
-
-    def setXML(self, name, xml):
-        mesonModuleXML(name, xml, "(GammaTGamma5 GammaTGamma5)", self.propagators[0], self.propagators[1])
-
-    def validate(self, state):
-        return validateProps(self.propagators, state)
-
-class Tensor2ptConfig(BaseModel):
-    """Tensor meson 2pt function (h1, b1). Antisymmetric tensor gamma structures."""
-    type: Literal["tensor2pt"] = "tensor2pt"
-    propagators: tuple[str, str] = Field(..., description="The tags of the propagators used to compute the observable")
-
-    def setXML(self, name, xml):
-        mesonModuleXML(name, xml, "(SigmaXT SigmaXT)(SigmaXT SigmaXY)(SigmaXT SigmaXZ)(SigmaXT SigmaYT)(SigmaXT SigmaYZ)(SigmaXT SigmaZT)(SigmaXY SigmaXT)(SigmaXY SigmaXY)(SigmaXY SigmaXZ)(SigmaXY SigmaYT)(SigmaXY SigmaYZ)(SigmaXY SigmaZT)(SigmaXZ SigmaXT)(SigmaXZ SigmaXY)(SigmaXZ SigmaXZ)(SigmaXZ SigmaYT)(SigmaXZ SigmaYZ)(SigmaXZ SigmaZT)(SigmaYT SigmaXT)(SigmaYT SigmaXY)(SigmaYT SigmaXZ)(SigmaYT SigmaYT)(SigmaYT SigmaYZ)(SigmaYT SigmaZT)(SigmaYZ SigmaXT)(SigmaYZ SigmaXY)(SigmaYZ SigmaXZ)(SigmaYZ SigmaYT)(SigmaYZ SigmaYZ)(SigmaYZ SigmaZT)(SigmaZT SigmaXT)(SigmaZT SigmaXY)(SigmaZT SigmaXZ)(SigmaZT SigmaYT)(SigmaZT SigmaYZ)(SigmaZT SigmaZT)", self.propagators[0], self.propagators[1])
-
-    def validate(self, state):
-        return validateProps(self.propagators, state)
-
-class Delta2ptConfig(BaseModel):
-    """Delta baryon 2pt function (spin-3/2). Uses spatial gamma interpolator."""
-    type: Literal["delta2pt"] = "delta2pt"
+class Delta2ptXConfig(BaseModel):
+    """Delta baryon 2pt function (spin-3/2, x polarisation). j32X interpolator."""
+    type: Literal["delta2pt_x"] = "delta2pt_x"
     propagators: tuple[str, str, str] = Field(..., description="The tags of the propagators used to compute the observable")
 
     def setXML(self, name, xml):
-        baryonModuleXML(name, xml, "(CGX CGX)", self.propagators[0], self.propagators[1], self.propagators[2])
+        baryonModuleXML(name, xml, "(j32X j32X)", self.propagators[0], self.propagators[1], self.propagators[2])
+
+    def validate(self, state):
+        return validateProps(self.propagators, state)
+
+class Delta2ptYConfig(BaseModel):
+    """Delta baryon 2pt function (spin-3/2, y polarisation). j32Y interpolator."""
+    type: Literal["delta2pt_y"] = "delta2pt_y"
+    propagators: tuple[str, str, str] = Field(..., description="The tags of the propagators used to compute the observable")
+
+    def setXML(self, name, xml):
+        baryonModuleXML(name, xml, "(j32Y j32Y)", self.propagators[0], self.propagators[1], self.propagators[2])
+
+    def validate(self, state):
+        return validateProps(self.propagators, state)
+
+class Delta2ptZConfig(BaseModel):
+    """Delta baryon 2pt function (spin-3/2, z polarisation). j32Z interpolator."""
+    type: Literal["delta2pt_z"] = "delta2pt_z"
+    propagators: tuple[str, str, str] = Field(..., description="The tags of the propagators used to compute the observable")
+
+    def setXML(self, name, xml):
+        baryonModuleXML(name, xml, "(j32Z j32Z)", self.propagators[0], self.propagators[1], self.propagators[2])
 
     def validate(self, state):
         return validateProps(self.propagators, state)
@@ -141,7 +108,7 @@ class Delta2ptConfig(BaseModel):
 class ObservableConfig(BaseModel):
     """An instance of an observable."""
     name: str = Field(..., description="The name/tag of the observable instance")        
-    obs: Union[Pion2ptConfig, Vector2ptConfig, Nucleon2ptConfig, Scalar2ptConfig, Axialvector2ptConfig, Temporalvector2ptConfig, Axialtemporalvector2ptConfig, Tensor2ptConfig, Delta2ptConfig] = Field(...,description="The observation instance and configuration.", discriminator='type')
+    obs: Union[Pion2ptConfig, Vector2ptConfig, Nucleon2ptConfig, Scalar2ptConfig, Axialvector2ptConfig, Temporalvector2ptConfig, Axialtemporalvector2ptConfig, Tensor2ptConfig, Delta2ptConfig, Delta2ptXConfig, Delta2ptYConfig, Delta2ptZConfig] = Field(...,description="The observation instance and configuration.", discriminator='type')
 
     def setXML(self, xml):
         self.obs.setXML(self.name, xml)
