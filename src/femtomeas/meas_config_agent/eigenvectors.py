@@ -121,7 +121,7 @@ class EigenSolversConfig(BaseModel):
         val=True
         reason=""
         for i in range(len(self.solvers)):
-            p = solvers[i].check(state)
+            p = self.solvers[i].check(state)
             if not p[0]:
                 val=False
                 reason += f"\nsolvers[{i}] ({self.solvers[i].name}): {p[1]}"
@@ -185,4 +185,4 @@ def setupEigenSolvers(model, state, user_interactions: list[BaseMessage]) -> Eig
     additional_user_query_rules = [
         """If the user asks for advice or help regarding which solver to use or for what parameters to use, refer to the information provided above regarding each solver.""" ]
 
-    return parameterAgent(model, EigenSolversConfig, role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions, additional_user_query_rules=additional_user_query_rules)
+    return parameterAgent(model, EigenSolversConfig, role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions, additional_user_query_rules=additional_user_query_rules, output_check_kwargs = {"state" : state })

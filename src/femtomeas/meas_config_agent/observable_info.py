@@ -60,22 +60,23 @@ def identifyObservables(model, user_interactions: list[BaseMessage]) -> Observab
    Parse the list of messages to identify a list of observable keys and their associated information
    """
 
-   role = "identifying all lattice QCD observables the user wants to compute, and extracting only the information explicitly provided by the user that is relevant to computing each observable."
+   role = """identifying all lattice QCD observables the user wants to compute, and recording user-provided details about those observables.
+
+   You will receive the user’s description of what observables they wish to compute, and your task is to use this information to fill the output data structure.
+   Rather than specifying observables, the user may ask you questions; respond to those questions as appropriate then ask the user again to describe the observables they want to compute. Use this information to populate your output."""
 
 
    parameter_rules = [
       """observables:
-  You will receive the user’s original request. Your task is to read only this content and produce a structured list of observables in the 'observables' field of your output. Do not invent, infer, or assume any information that is not explicitly stated by the user.
 
-  Use the following workflow:
-  - From the user's response, identify which observables the user wants to compute.
-  - Record any other information provided by the user about that observable in the user_info field
+  You must analyze the user's input description to identify which observables the user wants to compute and add an ObservableInfo instance for each distinct observable to "observables".
       
   Rules:
   - Any given observable can appear only once, even if the user wants to compute it multiple times with different inputs.
   - Your list must include every observable explicitly mentioned, and only those observables. Do not invent observables, do not combine observables unless the user explicitly describes them as the same, and do not add details that are not explicitly provided by the user.
   - Do not ask the user if they want to specify any more observables.
-  - Do not ask the user to confirm the list of observables       
+  - Do not ask the user to confirm the list of observables
+  
   """,
 
   """user_info: In the 'user_info' field, you must summarize any additional information provided by the user regarding the observable. Record only the information that the user has clearly provided about that specific instance of the observable. NEVER ask the user for this value. NEVER ask the user to provide additional information. 

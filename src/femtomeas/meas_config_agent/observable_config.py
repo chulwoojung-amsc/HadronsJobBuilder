@@ -64,7 +64,6 @@ class Meson2ptConfig(BaseModel):
             HadronsXML.setValues(opt, [ ("q1", instance.propagators[0]), ("q2", instance.propagators[1]), ("gammas", gammas_snk_src), ("sink", "point_sink_zerop"), ("output",f"{instance.name}.out") ])
        
     def check(self, state):
-        print("CHECK CALLED")
         result = True
         reason = ""
 
