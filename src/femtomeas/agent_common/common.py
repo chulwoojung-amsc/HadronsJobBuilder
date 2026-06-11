@@ -153,7 +153,12 @@ def getStructuredResponse(response, schema):
         return response["structured_response"]
     else:
         last_message = response["messages"][-1].content
-        #print("LAST MESSAGE", last_message)
+
+        #gpt-oss-120b with the AmSC LLM services sometimes runs ahead of itself with intervening blocks of reasoning output directly into the content in xml-like tags.
+        #However it seems that the content before the first tag is the intended user output.
+        if "<reasoning>" in last_message:
+            last_message = last_message[:last_message.content.find('<reasoning>')]
+        
         return schema.model_validate_json(last_message)
 
     
