@@ -11,8 +11,8 @@ from typing import Literal, Union, List, Optional, Tuple
 from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from langchain.agents import create_agent
 from femtomeas.agent_common.common import *
-from .hadrons_xml import HadronsXML
-from femtomeas.agent_common.agent_base import parameterAgent
+from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+from femtomeas.agent_common.python_output_agent import parameterAgent
 
 class RBPrecCGsolver(BaseModel):
     """red-black preconditioned conjugate gradient (CG) solver"""
@@ -35,10 +35,7 @@ class SolverConfig(BaseModel):
     def setXML(self,xml):
         self.solver_args.setXML(self.name,self.action,xml)
     
-class SolversConfig(BaseModel):
-    solvers: List[SolverConfig] = Field(...,description="The list of solver instances")
-
-def identifySolvers(model, state, user_interactions: list[BaseMessage]) -> SolversConfig:
+def identifySolvers(model, state, user_interactions: list[BaseMessage]) -> str:
     """
     Parse the list of messages to identify a list of solver instances and their associated parameters
     """
@@ -48,7 +45,7 @@ def identifySolvers(model, state, user_interactions: list[BaseMessage]) -> Solve
 Previous agent interactions have identified a set of observables and their required number of propagators. Solvers are required to compute those propagators. A solver instance has a set of parameters such as stopping conditions and the maximum number of iterations. The instance also has an 'action' field, that must be set to the name of one of the action instances identified previously. Each action instance must have one or more solver instances associated with it."""
 
     parameter_rules = [
-        #solvers
+  #solvers
         """solvers:
         
   Use the following workflow:
@@ -113,4 +110,4 @@ Previous agent interactions have identified a set of observables and their requi
     "When asking a question referring to a group, ensure your question clearly identifies the group."
     ]
 
-    return parameterAgent(model, SolversConfig, role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions, additional_user_query_rules=additional_user_query_rules)
+    return parameterAgent(model, SolverConfig, role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions, additional_user_query_rules=additional_user_query_rules)

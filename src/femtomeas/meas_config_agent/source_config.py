@@ -10,11 +10,12 @@ from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple
 from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from langchain.agents import create_agent
-from .hadrons_xml import HadronsXML
+from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 import json
 from femtomeas.agent_common.common import *
-from femtomeas.agent_common.agent_base import parameterAgent
-from .meas_agent_common import Gammas
+from femtomeas.agent_common.python_output_agent import parameterAgent
+from femtomeas.meas_config_agent.meas_agent_common import Gammas
+
 
 class PointSource(BaseModel):
     """A point or single-location source"""
@@ -78,35 +79,13 @@ class SourceConfig(BaseModel):
     def setXML(self,xml):
         self.source.setXML(self.name,xml)
 
-    def check(self, state, src_names):
-        return self.source.check(state, src_names)
-        
+    def check(self, state, all_sources):
+        return self.source.check(state, all_sources)
 
-class SourcesConfig(BaseModel):
-    sources: List[SourceConfig] = Field(...,description="The list of source instances")
+def identifySources(model, state, user_interactions: list[BaseMessage]) -> str:
+    role = """creating instances of SourceConfig for every propagator source required by the user.
 
-    def check(self, state):
-        print("SOURCE CHECK")
-        src_names = [s.name for s in self.sources]
-        val = True
-        reason = ""
-        
-        for i in range(len(self.sources)):
-            p = self.sources[i].check(state, src_names)
-            if not p[0]:
-                val=False
-                reason += f"\nsources[{i}] ({self.sources[i].name}): {p[1]}"
-        return (val,reason)
-    
-
-def identifySources(model, state, user_interactions: list[BaseMessage]) -> SourcesConfig:
-    """
-    Parse the list of messages to identify a list of propagator sources and their associated parameters
-    """
-
-    role = """identifying all lattice QCD propagator sources required to compute the propagators required for the calculation, based solely on user input.
-
-Previous agent interactions have identified a set of observables and their required number of propagators. Sources are inputs to constructing those propagators. A source instance has a source type (e.g. point, wall) along with a set of parameters that depend on the source type. Each propagator requires a source, but can share the same source instance.    
+    Previous agent interactions have identified a set of observables and their required number of propagators. Sources are inputs to constructing those propagators. A source instance has a source type (e.g. point, wall) along with a set of parameters that depend on the source type. Each propagator requires a source, but can share the same source instance.
     """
 
     parameter_rules = [
@@ -181,8 +160,18 @@ Previous agent interactions have identified a set of observables and their requi
     
         "When asking a question referring to a group, ensure your question clearly identifies the group."
         ]
-
-    additional_workflow_termination_rules = """replace duplicate SourceConfig instances that have the same source parameters with a single, unified instance. Each remaining SourceConfig instance must have different parameters."""
-
     
-    return parameterAgent(model, SourcesConfig, role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions, additional_user_query_rules=additional_user_query_rules, additional_workflow_termination_rules=additional_workflow_termination_rules, output_check_kwargs = {"state" : state })
+    def checkAll(sources):
+        print("SOURCE CHECK",type(sources),len(sources),type(sources[0]) if len(sources) > 0 else None)
+        src_names = [s.name for s in sources]
+        val = True
+        reason = ""
+        
+        for i in range(len(sources)):
+            p = sources[i].check(state, src_names)
+            if not p[0]:
+                val=False
+                reason += f"\nsources[{i}] ({sources[i].name}): {p[1]}"
+        return (val,reason)
+
+    return parameterAgent(model, SourceConfig, role, tools=[], input_messages=user_interactions, parameter_rules=parameter_rules, group_validator=checkAll )

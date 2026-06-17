@@ -12,11 +12,10 @@ from langchain.tools import tool, ToolRuntime
 from langgraph.store.memory import InMemoryStore
 from langchain.agents import create_agent
 import xml.etree.ElementTree as ET
-from .hadrons_xml import HadronsXML
+from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 
 from femtomeas.agent_common.common import *
-from femtomeas.agent_common.agent_base import parameterAgent
-
+from femtomeas.agent_common.python_output_agent import parameterAgent
 
 class DWFaction(BaseModel):
     """A Domain Wall Fermion (DWF) action instance"""
@@ -55,12 +54,9 @@ class ActionConfig(BaseModel):
     
     def setXML(self,xml):
         self.action.setXML(self.name, xml)
-    
-class ActionsConfig(BaseModel):
-    actions: List[ActionConfig] = Field(...,description="The list of action instances")
 
 
-def identifyActions(model, user_interactions: list[BaseMessage]) -> ActionsConfig:
+def identifyActions(model, user_interactions: list[BaseMessage]) -> str:
     """
     Parse the list of messages to identify a list of actions and their associated parameters
     """
@@ -92,4 +88,4 @@ def identifyActions(model, user_interactions: list[BaseMessage]) -> ActionsConfi
   - If the user does not specify any details, use an empty string. For example, if the user specifies that this action will be used for light quark propagators, enter "use for all light quark propagators" in user_info.""" ]
 
 
-    return parameterAgent(model, ActionsConfig, role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions)
+    return parameterAgent(model, ActionConfig, role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions)

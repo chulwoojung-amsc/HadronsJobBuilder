@@ -1,9 +1,16 @@
 import os
 from femtomeas.agent_common.common import *
 from .state import *
-from .hadrons_xml import HadronsXML
+from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+from femtomeas.agent_common.print_pydantic_meta import llm_json_text
 import femtomeas.workflow_manager as wfman
 from .observable_info import observableSkills
+from .source_config import identifySources
+from .eigenvectors import setupEigenSolvers
+from .solver_config import identifySolvers
+from .propagator_config import identifyPropagators
+from .observable_config import configureObservables
+from femtomeas.meas_config_agent.gauge import identifyGaugeConfigs
 
 def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
     if reload_state and os.path.exists(ckpoint_file):
@@ -31,17 +38,17 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
     messages.append( HumanMessage("The following information has been derived regarding the observables we need to compute based on user input:\n" + json.dumps(TypeAdapter(List[ObservableInfo]).dump_python(state.observables)  , indent=2) + "\n" + observableSkills(state.observables) ) )
 
     if state.actions == None:
-        Print("""
+       Print("""
 ---
 ## ACTIONS
 ---
-        """)       
-        state.actions = identifyActions(model, messages.copy()).actions
-        checkpointState(state,ckpoint_file)
+       """)       
+       state.actions = identifyActions(model, messages.copy())
+       checkpointState(state,ckpoint_file)
 
     #Add actions information to messages
     #TODO: We don't need to pass forward all the parameter details of the actions, only the user_info and instance names are required
-    messages.append( HumanMessage("The following action instances have been identified based on user input:\n" + json.dumps(TypeAdapter(List[ActionConfig]).dump_python(state.actions), indent=2) ) )        
+    messages.append( HumanMessage("The Python code that specifies and generates the action instances is as follows:\n" + state.actions, indent=2) )     
 
     if state.sources == None:
         Print("""
@@ -49,7 +56,7 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
 ## SOURCES
 ---
         """)
-        state.sources = identifySources(model, state, messages.copy()).sources
+        state.sources = identifySources(model, state, messages.copy())
         checkpointState(state,ckpoint_file)
 
 
@@ -59,11 +66,11 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
 ## EIGENSOLVERS
 ---
         """) 
-        state.eigensolvers = setupEigenSolvers(model, state, messages.copy()).solvers
+        state.eigensolvers = setupEigenSolvers(model, state, messages.copy())
         checkpointState(state,ckpoint_file)
 
     #Add eigensolvers to messages
-    messages.append( HumanMessage("The following eigensolver instances have been identified based on user input:\n" + json.dumps(TypeAdapter(List[EigenSolverConfig]).dump_python(state.eigensolvers), indent=2) ) )
+    messages.append( HumanMessage("The Python code that specifies and generates the eigensolver instances is as follows:\n" + state.eigensolvers, indent=2) )
         
     if state.solvers == None:
         Print("""
@@ -71,12 +78,12 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
 ## SOLVERS
 ---
         """) 
-        state.solvers = identifySolvers(model, state, messages.copy()).solvers
+        state.solvers = identifySolvers(model, state, messages.copy())
         checkpointState(state,ckpoint_file)
 
     #Add sources and solvers to messages
-    messages.append( HumanMessage("The following source instances have been identified based on user input:\n" + json.dumps(TypeAdapter(List[SourceConfig]).dump_python(state.sources), indent=2) ) )        
-    messages.append( HumanMessage("The following solver instances have been identified based on user input:\n" + json.dumps(TypeAdapter(List[SolverConfig]).dump_python(state.solvers), indent=2) ) )        
+    messages.append( HumanMessage("The Python code that specifies and generates the source instances is as follows:\n" + state.sources, indent=2) ) 
+    messages.append( HumanMessage("The Python code that specifies and generates the solver instances is as follows:\n" + state.solvers, indent=2) ) 
 
     if state.propagators == None:
         Print("""
@@ -84,10 +91,10 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
 ## PROPAGATORS
 ---
         """) 
-        state.propagators = identifyPropagators(model, state, messages.copy()).propagators
+        state.propagators = identifyPropagators(model, state, messages.copy())
         checkpointState(state,ckpoint_file)
 
-    messages.append( HumanMessage("The following propagator instances have been identified based on user input:\n" + json.dumps(TypeAdapter(List[PropagatorConfig]).dump_python(state.propagators), indent=2) ) )               
+    messages.append( HumanMessage("The Python code that specifies and generates the propagator instances is as follows:\n" + state.propagators, indent=2) )
 
     if state.observable_configs == None:
                 
@@ -96,7 +103,7 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
 ## OBSERVABLE CONFIGURATIONS
 ---
         """)
-        state.observable_configs = configureObservables(model, state, messages.copy()).observable_configs
+        state.observable_configs = configureObservables(model, state, messages.copy())
         checkpointState(state,ckpoint_file)
 
     if state.gauge == None:

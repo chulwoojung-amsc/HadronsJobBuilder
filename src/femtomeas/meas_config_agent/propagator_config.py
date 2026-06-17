@@ -10,27 +10,21 @@ from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple
 from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from femtomeas.agent_common.common import *
-from .hadrons_xml import HadronsXML
+from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+from femtomeas.agent_common.python_output_agent import parameterModelCall
 
 class PropagatorConfig(BaseModel):
     name : str = Field(..., description="The name/tag for the propagator instance")
     source: str = Field(..., description="The name/tag of the propagator's source instance")
     solver: str = Field(..., description="The name/tag of the propagator's solver instance")
     user_info: str = Field(..., description="Additional information (if any) provided by the user on what observables this propagator will be used for")
-
-    #observables: List[str] = Field(...,description="The observable instances to which this propagator will be associated")
     
     def setXML(self,xml):
         opt = xml.addModule(self.name,"MFermion::GaugeProp")
-        HadronsXML.setValues(opt, [ ("source",self.source), ("solver",self.solver) ])
-    
-class PropagatorsConfig(BaseModel):
-    propagators: List[PropagatorConfig] = Field(...,description="The list of propagator instances")
-   
+        HadronsXML.setValues(opt, [ ("source",self.source), ("solver",self.solver) ])  
 
-def identifyPropagators(model, state, user_interactions: list[BaseMessage]) -> PropagatorsConfig:
-    #Likely don't need an agent as we will not be asking questions of the user
-    sys = """
+def identifyPropagators(model, state, user_interactions: list[BaseMessage]) -> str:
+    role = """
 You are responsible for identifying the lattice QCD propagators for the calculation alongside their associated solver and source.
 
 A propagator instance has a 'source' and 'solver' field that must be set, respectively, to the name of one of the source and solver instances identified previously.
@@ -49,42 +43,24 @@ If more than one observable requires a propagator with the same source/solver co
 Propagator instance rules:    
 - Your list must include every propagator instance required for the observables, and only those. Do not invent instances.
 - You must reuse propagator instances that share the same source and solver
-    
-Your output must be in JSON format and adhere to the following schema:    
-""" + json.dumps(PropagatorsConfig.model_json_schema())
-  
-    accepted = False
-    obj = None
-    while(accepted == False):
-        obj = callModelWithStructuredOutput(model, sys, user_interactions, PropagatorsConfig, use_langchain_structured_output_method = False)
+"""    
 
-        #Auto validation
-        valid = True
-        invalid_why = "Your previous response was invalid for the following reason(s):"
+    def instanceCheck(prop):
+        if not state.isValidSource(prop.source):
+            return (False, f"\n-Source instance '{prop.source}' does not exist")        
+        if not state.isValidSolver(prop.solver):
+            return (False, f"\n-Solver instance '{prop.solver}' does not exist")
+        return (True, "")
+
+    def groupCheck(props):
         names = []
-        for r in obj.propagators:
-            if not state.isValidSource(r.source):
-                invalid_why += f"\n-Source instance '{r.source}' does not exist"
-                valid = False
-            if not state.isValidSolver(r.solver):
-                invalid_why += f"\n-Solver instance '{r.solver}' does not exist"
-                valid = False
+        valid = True
+        invalid_why = ""
+        for r in props:
             if r.name in names:
                 invalid_why += f"\n-Propagator name '{r.name}' is not unique"
                 valid = False
             names.append(r.name)
-                                
-        if not valid:
-            user_interactions.append(HumanMessage(invalid_why))
-            continue
+        return (valid, invalid_why)
 
-
-        #Human validation
-        output = f"Obtained {len(obj.propagators)} propagator instances\n" + prettyPrintPydantic(obj.propagators)
-        Print(output)
-
-        accepted = queryYesNo("Is this correct?")
-        if(accepted == False):
-            reason = Input("Explain what is wrong: ")
-            user_interactions.append(HumanMessage(f"Your previous response was not accepted for the following reason: {reason}"))            
-    return obj
+    return parameterModelCall(model, PropagatorConfig, role, input_messages = user_interactions, instance_validator=instanceCheck, group_validator=groupCheck)

@@ -27,9 +27,6 @@ class Meson2ptObs(BaseModel):
 class ObservableInfo(BaseModel):
    """Information about an observable to be computed."""
    obs_type: Union[Meson2ptObs]= Field(...,description="The observable contraction and particle types, and important knowledge.", discriminator="type")
-   user_info: str = Field(...,description="Any relevant information obtained from the user regarding the observable, such as "
-                     "propagator masses, momenta, source/sink smearing, etc. "
-                     "Use an empty string if no extra information is given.")
 
 
 def observableSkills(observables):
@@ -56,11 +53,7 @@ class ObservablesInfo(BaseModel):
 
     
 def identifyObservables(model, user_interactions: list[BaseMessage]) -> ObservablesInfo:
-   """
-   Parse the list of messages to identify a list of observable keys and their associated information
-   """
-
-   role = """identifying all lattice QCD observables the user wants to compute, and recording user-provided details about those observables.
+   role = """identifying all lattice QCD observables the user wants to compute
 
    You will receive the user’s description of what observables they wish to compute, and your task is to use this information to fill the output data structure.
    Rather than specifying observables, the user may ask you questions; respond to those questions as appropriate then ask the user again to describe the observables they want to compute. Use this information to populate your output."""
@@ -78,15 +71,6 @@ def identifyObservables(model, user_interactions: list[BaseMessage]) -> Observab
   - Do not ask the user to confirm the list of observables
   
   """,
-
-  """user_info: In the 'user_info' field, you must summarize any additional information provided by the user regarding the observable. Record only the information that the user has clearly provided about that specific instance of the observable. NEVER ask the user for this value. NEVER ask the user to provide additional information. 
-
-  Examples include:
-  – required propagators
-  – operator insertions
-  – quantum numbers or kinematic parameters
-  – anything else explicitly tied to the computation
-  If the user did not specify extra information for an observable, leave the user_info field empty rather than guessing or filling in defaults. Never ask the user to provide additional information.""",
   
   "obs_type: Populate the 'obs_type' field with an object of type appropriate to the observable. If the user describes an observable that is not supported, you must describe to the user which observables you support and ask the user which ones they want."
 

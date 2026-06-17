@@ -1,17 +1,20 @@
 import json
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple
-
-from .observable_info import *
-from .observable_config import *
-from .action_config import *
-from .source_config import *
-from .solver_config import *
-from .propagator_config import *
-from .gauge import *
-from .eigenvectors import *
-from .hadrons_xml import HadronsXML
+from pathlib import Path
+from textwrap import indent
+from .observable_info import ObservableInfo
+from femtomeas.meas_config_agent.gauge import GaugeFieldConfig
+from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 from femtomeas.agent_common.common import Print
+from femtomeas.agent_common.python_output_agent import executeCode, executeCodeAndParse
+
+from .action_config import ActionConfig
+from .source_config import SourceConfig
+from .solver_config import SolverConfig
+from .propagator_config import PropagatorConfig
+from .observable_config import ObservableConfig
+from .eigenvectors import EigenSolverConfig
 
 def checkpointState(state, filename):
     #j = json.dumps({k: v.model_dump() for k, v in state.items()}, indent=2)
@@ -28,12 +31,12 @@ def reloadStateCheckpoint(filename):
 class State(BaseModel):
     query: str | None = Field(None,description="The original query")
     observables: List[ObservableInfo] | None = Field(None,description="The list of observables and associated relevant information")
-    actions: List[ActionConfig] | None = Field(None,description="The list of action instances")
-    sources: List[SourceConfig] | None = Field(None,description="The list of source instances")
-    eigensolvers: List[EigenSolverConfig] | None = Field(None,description="The list of eigensolver instances")
-    solvers: List[SolverConfig] | None = Field(None,description="The list of solver instances")
-    propagators: List[PropagatorConfig] | None = Field(None,description="The list of propagator instances")
-    observable_configs : List[ObservableConfig] | None = Field(None,description="The list of observable instances")
+    actions: str | None = Field(None,description="Code for generating action instances")
+    sources: str | None = Field(None,description="Code for generating source instances")
+    eigensolvers: str | None = Field(None,description="Code for generating eigensolver instances")
+    solvers: str | None = Field(None,description="Code for generating the solver instances")
+    propagators: str | None = Field(None,description="Code for generating the propagator instances")
+    observable_configs : str | None = Field(None,description="Code for generating observable instances")
     gauge: GaugeFieldConfig | None = Field(None,description="The gauge configuration parameters")
 
     def isValidObservable(self, obs_name):
@@ -49,26 +52,50 @@ class State(BaseModel):
         return None
     
     def isValidAction(self, action_name):
-        for p in self.actions:
-            if p.name == action_name:
+        r, e = executeCode(self.actions)
+        if len(e) > 0:
+            raise Exception(f"Executing code gave the following exceptions: {e}")
+        assert "result" in r.keys()
+        actions = r["result"]
+
+        for p in actions:
+            if p["name"] == action_name:
                 return True
         return False
     
     def isValidSource(self, source_name):
-        for p in self.sources:
-            if p.name == source_name:
+        r, e = executeCode(self.sources)
+        if len(e) > 0:
+            raise Exception(f"Executing code gave the following exceptions: {e}")
+        assert "result" in r.keys()
+        sources = r["result"]
+
+        for p in sources:
+            if p["name"] == source_name:
                 return True
         return False
 
     def isValidSolver(self, solver_name):
-        for p in self.solvers:
-            if p.name == solver_name:
+        r, e = executeCode(self.solvers)
+        if len(e) > 0:
+            raise Exception(f"Executing code gave the following exceptions: {e}")
+        assert "result" in r.keys()
+        solvers = r["result"]
+
+        for p in solvers:
+            if p["name"] == solver_name:
                 return True
-        return False   
+        return False
     
-    def isValidPropagator(self, prop_name):
-        for p in self.propagators:
-            if p.name == prop_name:
+    def isValidPropagator(self, propagator_name):
+        r, e = executeCode(self.propagators)
+        if len(e) > 0:
+            raise Exception(f"Executing code gave the following exceptions: {e}")
+        assert "result" in r.keys()
+        propagators = r["result"]
+
+        for p in propagators:
+            if p["name"] == propagator_name:
                 return True
         return False
 
@@ -79,27 +106,19 @@ class State(BaseModel):
         xml = HadronsXML()
         xml.setRunID(1234) #What does this do?
 
-        for a in self.actions:
-            a.setXML(xml)
-        for s in self.sources:
-            s.setXML(xml)
-        for s in self.eigensolvers:
-            s.setXML(xml)            
-        for s in self.solvers:
-            s.setXML(xml)
-        for p in self.propagators:
-            p.setXML(xml)
+        for c in [(self.actions, ActionConfig), (self.sources, SourceConfig), (self.eigensolvers, EigenSolverConfig), (self.solvers, SolverConfig), (self.propagators, PropagatorConfig), (self.observable_configs, ObservableConfig)]:            
+            r, e = executeCodeAndParse(*c)
+            if len(e) > 0:
+                raise Exception(f"Executing code for type {c[1]} gave the following exceptions: {e}")
+            for a in r:
+                a.setXML(xml)
 
         #Temporary; add a zero-momentum point sink for two-point functions
         #TODO: Have the observables agent also construct sinks as needed
         snk = xml.addModule("point_sink_zerop", "MSink::ScalarPoint")
         HadronsXML.setValue(snk, "mom", "0. 0. 0.")
-
-        for o in self.observable_configs:
-            o.setXML(xml)
-        return xml
-
         
+        return xml
     
     def toHadronsXML(self)->HadronsXML:
         xml=self._toHadronsXMLbase()
@@ -116,4 +135,82 @@ class State(BaseModel):
         self.gauge.setXMLsingle(xml,job_index,override_path)
         return xml
 
-    
+    def toXMLgeneratorCode(self, output_file):
+        assert Path(output_file).suffix.lower() == ".py"
+        gauge_json = "gauge_json = " + self.gauge.model_dump_json(indent=2)
+
+        with open(output_file, 'w') as f:
+            f.write(f"""
+from femtomeas.meas_config_agent.action_config import ActionConfig
+from femtomeas.meas_config_agent.source_config import SourceConfig
+from femtomeas.meas_config_agent.solver_config import SolverConfig
+from femtomeas.meas_config_agent.propagator_config import PropagatorConfig
+from femtomeas.meas_config_agent.observable_config import ObservableConfig
+from femtomeas.meas_config_agent.gauge import GaugeFieldConfig
+from femtomeas.meas_config_agent.eigenvectors import EigenSolverConfig                    
+from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+import sys
+
+def actions(xml):
+{indent(self.actions, '    ')}
+    for r in result:
+        rm = ActionConfig.model_validate(r)
+        rm.setXML(xml)                    
+
+def sources(xml):
+{indent(self.sources, '    ')}
+    for r in result:
+        rm = SourceConfig.model_validate(r)
+        rm.setXML(xml)
+
+def eigensolvers(xml):
+{indent(self.eigensolvers, '    ')}
+    for r in result:
+        rm = EigenSolverConfig.model_validate(r)
+        rm.setXML(xml)              
+
+def solvers(xml):
+{indent(self.solvers, '    ')}
+    for r in result:
+        rm = SolverConfig.model_validate(r)
+        rm.setXML(xml)            
+
+def propagators(xml):
+{indent(self.propagators, '    ')}
+    for r in result:
+        rm = PropagatorConfig.model_validate(r)
+        rm.setXML(xml)          
+
+def observables(xml):
+{indent(self.observable_configs, '    ')}
+    for r in result:
+        rm = ObservableConfig.model_validate(r)
+        rm.setXML(xml)            
+
+def gauge(xml):
+{indent(gauge_json,  '    ')}
+    rm = GaugeFieldConfig.model_validate(gauge_json)
+    rm.setXML(xml)
+
+if len(sys.argv) == 0:
+    raise Exception("Require the XML filename")
+
+xml = HadronsXML()
+xml.setRunID(1234) #What does this do?        
+
+
+#Temporary; add a zero-momentum point sink for two-point functions
+#TODO: Have the observables agent also construct sinks as needed
+snk = xml.addModule("point_sink_zerop", "MSink::ScalarPoint")
+HadronsXML.setValue(snk, "mom", "0. 0. 0.")
+
+actions(xml)
+sources(xml)
+eigensolvers(xml)
+solvers(xml)
+propagators(xml)
+observables(xml)
+gauge(xml)
+
+xml.write(sys.argv[1])
+""")

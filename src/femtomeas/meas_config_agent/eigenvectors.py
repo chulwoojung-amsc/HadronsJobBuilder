@@ -10,11 +10,10 @@ from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter, 
 from typing import Literal, Union, List, Optional, Tuple
 from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from langchain.agents import create_agent
-from .hadrons_xml import HadronsXML
+from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 import json
 from femtomeas.agent_common.common import *
-from femtomeas.agent_common.agent_base import parameterAgent
-
+from femtomeas.agent_common.python_output_agent import parameterAgent
 class ChebyParams(BaseModel):
     """Parameters of the Chebyshev polynomial"""
     alpha : PositiveFloat = Field(..., description="The lower bound of the eigenvalue window suppresed by the Chebyshev filter.")
@@ -113,22 +112,9 @@ class EigenSolverConfig(BaseModel):
 
     def setXML(self,xml):
         self.solver_args.setXML(self.name, xml)
-
-class EigenSolversConfig(BaseModel):
-    solvers: List[EigenSolverConfig] = Field(...,description="The list of eigensolver instances")
-
-    def check(self, state):
-        val=True
-        reason=""
-        for i in range(len(self.solvers)):
-            p = self.solvers[i].check(state)
-            if not p[0]:
-                val=False
-                reason += f"\nsolvers[{i}] ({self.solvers[i].name}): {p[1]}"
-        return (val,reason)
+   
     
-    
-def setupEigenSolvers(model, state, user_interactions: list[BaseMessage]) -> EigenSolversConfig:
+def setupEigenSolvers(model, state, user_interactions: list[BaseMessage]) -> str:
     """
     Setup (optional) eigensolvers
     """
@@ -184,5 +170,8 @@ def setupEigenSolvers(model, state, user_interactions: list[BaseMessage]) -> Eig
     
     additional_user_query_rules = [
         """If the user asks for advice or help regarding which solver to use or for what parameters to use, refer to the information provided above regarding each solver.""" ]
+    
+    def check(instance):
+        return instance.check(state)
 
-    return parameterAgent(model, EigenSolversConfig, role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions, additional_user_query_rules=additional_user_query_rules, output_check_kwargs = {"state" : state })
+    return parameterAgent(model, EigenSolverConfig, role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions, additional_user_query_rules=additional_user_query_rules, instance_validator=check)

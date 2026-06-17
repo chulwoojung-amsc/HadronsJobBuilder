@@ -10,9 +10,9 @@ from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple
 from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from femtomeas.agent_common.common import *
-from .hadrons_xml import HadronsXML
-from femtomeas.agent_common.agent_base import parameterAgent
-from .meas_agent_common import Gammas
+from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+from femtomeas.agent_common.python_output_agent import parameterAgent
+from femtomeas.meas_config_agent.meas_agent_common import Gammas
 
 mesonSpecialKeywords = Literal["pion","kaon","pseudoscalar","vector","axial-vector"]
 
@@ -86,24 +86,9 @@ class ObservableConfig(BaseModel):
         self.obs.setXML(xml)
 
     def check(self, state):
-        return self.obs.check(state)
-       
-class ObservablesConfig(BaseModel):
-    observable_configs: List[ObservableConfig] = Field(...,description="The list of observable instances and their configurations")
+        return self.obs.check(state)     
 
-    def check(self, state):
-        val=True
-        reason=""
-        for i in range(len(self.observable_configs)):
-            p = self.observable_configs[i].check(state)
-            if not p[0]:
-                val=False
-                reason += f"\nobservable_configs[{i}] ({self.observable_configs[i].obs.type}): {p[1]}"
-        return (val,reason)
-
-    
-
-def configureObservables(model, state, user_interactions: list[BaseMessage]) -> ObservablesConfig:
+def configureObservables(model, state, user_interactions: list[BaseMessage]) -> ObservableConfig:
     role = """for building a list of lattice QCD observable instances and their associated parameters based on the conversation history.
 
     In previous stages of the workflow, agents identified a list of observable types that will be computed alongside some associated information. For each and every observable type in this list you must instantiate the required number of observable instances and determine their propagators and other parameters."""
@@ -154,4 +139,7 @@ def configureObservables(model, state, user_interactions: list[BaseMessage]) -> 
     tools = [getMesonGammasTool]
     tool_rules = []
     
-    return parameterAgent(model, ObservablesConfig, role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, input_messages=user_interactions, output_check_kwargs = {"state" : state })
+    def instanceCheck(obs):
+        return obs.check(state)
+
+    return parameterAgent(model, ObservableConfig, role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, input_messages=user_interactions, instance_validator=instanceCheck)
