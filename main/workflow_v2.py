@@ -62,6 +62,13 @@ def parse_args():
         help="Activate the job manager without running the configuration agent, resuming its control over existing workflows (requires --execute-workflow <config>)"
     )
 
+    parser.add_argument(
+        "--write-xml-generator",
+        nargs=1,   
+        metavar="FILENAME",
+        help="Write Python code that generates the measurement config in Hadrons XML format"
+    )
+
     return parser.parse_args()
 
 
@@ -116,9 +123,13 @@ if __name__ == "__main__":
         if write_xml:
             state.toHadronsXML().write(write_xml_file)  #note, if the XML uses non-local files it cannot be used directly
 
+        if args.write_xml_generator is not None:
+            print(args.write_xml_generator)
+            state.toXMLgeneratorCode(args.write_xml_generator[0])
+
     #Start the job manager
     jman = None
-    if args.execute_workflow is not None:
+    if args.execute_workflow:
         setupManager(config)
         jman = JobManager("jobs.db")
         jman.start()

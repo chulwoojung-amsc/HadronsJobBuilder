@@ -1,7 +1,8 @@
 import json
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple
-
+from pathlib import Path
+from textwrap import indent
 from .observable_info import ObservableInfo
 from femtomeas.meas_config_agent.gauge import GaugeFieldConfig
 from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
@@ -13,6 +14,7 @@ from .source_config import SourceConfig
 from .solver_config import SolverConfig
 from .propagator_config import PropagatorConfig
 from .observable_config import ObservableConfig
+from .eigenvectors import EigenSolverConfig
 
 def checkpointState(state, filename):
     #j = json.dumps({k: v.model_dump() for k, v in state.items()}, indent=2)
@@ -97,7 +99,6 @@ class State(BaseModel):
                 return True
         return False
 
-
     def _toHadronsXMLbase(self)->HadronsXML:
         """
         Set all elements bar the gauge module, which needs special treatment
@@ -105,7 +106,7 @@ class State(BaseModel):
         xml = HadronsXML()
         xml.setRunID(1234) #What does this do?
 
-        for c in [(self.actions, ActionConfig), (self.sources, SourceConfig), (self.solvers, SolverConfig), (self.propagators, PropagatorConfig), (self.observable_configs, ObservableConfig)]:            
+        for c in [(self.actions, ActionConfig), (self.sources, SourceConfig), (self.eigensolvers, EigenSolverConfig), (self.solvers, SolverConfig), (self.propagators, PropagatorConfig), (self.observable_configs, ObservableConfig)]:            
             r, e = executeCodeAndParse(*c)
             if len(e) > 0:
                 raise Exception(f"Executing code for type {c[1]} gave the following exceptions: {e}")
@@ -134,4 +135,82 @@ class State(BaseModel):
         self.gauge.setXMLsingle(xml,job_index,override_path)
         return xml
 
-    
+    def toXMLgeneratorCode(self, output_file):
+        assert Path(output_file).suffix.lower() == ".py"
+        gauge_json = "gauge_json = " + self.gauge.model_dump_json(indent=2)
+
+        with open(output_file, 'w') as f:
+            f.write(f"""
+from femtomeas.meas_config_agent.action_config import ActionConfig
+from femtomeas.meas_config_agent.source_config import SourceConfig
+from femtomeas.meas_config_agent.solver_config import SolverConfig
+from femtomeas.meas_config_agent.propagator_config import PropagatorConfig
+from femtomeas.meas_config_agent.observable_config import ObservableConfig
+from femtomeas.meas_config_agent.gauge import GaugeFieldConfig
+from femtomeas.meas_config_agent.eigenvectors import EigenSolverConfig                    
+from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+import sys
+
+def actions(xml):
+{indent(self.actions, '    ')}
+    for r in result:
+        rm = ActionConfig.model_validate(r)
+        rm.setXML(xml)                    
+
+def sources(xml):
+{indent(self.sources, '    ')}
+    for r in result:
+        rm = SourceConfig.model_validate(r)
+        rm.setXML(xml)
+
+def eigensolvers(xml):
+{indent(self.eigensolvers, '    ')}
+    for r in result:
+        rm = EigenSolverConfig.model_validate(r)
+        rm.setXML(xml)              
+
+def solvers(xml):
+{indent(self.solvers, '    ')}
+    for r in result:
+        rm = SolverConfig.model_validate(r)
+        rm.setXML(xml)            
+
+def propagators(xml):
+{indent(self.propagators, '    ')}
+    for r in result:
+        rm = PropagatorConfig.model_validate(r)
+        rm.setXML(xml)          
+
+def observables(xml):
+{indent(self.observable_configs, '    ')}
+    for r in result:
+        rm = ObservableConfig.model_validate(r)
+        rm.setXML(xml)            
+
+def gauge(xml):
+{indent(gauge_json,  '    ')}
+    rm = GaugeFieldConfig.model_validate(gauge_json)
+    rm.setXML(xml)
+
+if len(sys.argv) == 0:
+    raise Exception("Require the XML filename")
+
+xml = HadronsXML()
+xml.setRunID(1234) #What does this do?        
+
+
+#Temporary; add a zero-momentum point sink for two-point functions
+#TODO: Have the observables agent also construct sinks as needed
+snk = xml.addModule("point_sink_zerop", "MSink::ScalarPoint")
+HadronsXML.setValue(snk, "mom", "0. 0. 0.")
+
+actions(xml)
+sources(xml)
+eigensolvers(xml)
+solvers(xml)
+propagators(xml)
+observables(xml)
+gauge(xml)
+
+xml.write(sys.argv[1])
+""")

@@ -118,7 +118,7 @@ if __name__ == "__main__":
 
     #Start the job manager
     jman = None
-    if args.execute_workflow is not None:
+    if args.execute_workflow:
         setupManager(config)
         jman = JobManager("jobs.db")
         jman.start()

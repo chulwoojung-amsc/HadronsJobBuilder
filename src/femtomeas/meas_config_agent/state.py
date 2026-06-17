@@ -83,6 +83,8 @@ class State(BaseModel):
             a.setXML(xml)
         for s in self.sources:
             s.setXML(xml)
+        for s in self.eigensolvers:
+            s.setXML(xml)            
         for s in self.solvers:
             s.setXML(xml)
         for p in self.propagators:
