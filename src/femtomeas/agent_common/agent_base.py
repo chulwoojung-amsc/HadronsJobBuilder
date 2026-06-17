@@ -249,7 +249,7 @@ Current {output_type_name} params struct
             print("NO PARAMS_STRUCT IN RESPONSE")
             continue
 
-        print("OUTPUT", prettyPrintPydantic(resp_struct) )
+        print("OUTPUT", prettyPrintPydantic(resp_struct), "\n\n" )
 
         if resp_struct.done:
             obj = structured_output_model.model_validate_json(resp_struct.params_struct)            
