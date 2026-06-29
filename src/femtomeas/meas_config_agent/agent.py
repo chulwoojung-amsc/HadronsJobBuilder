@@ -4,7 +4,8 @@ from .state import *
 from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 from femtomeas.agent_common.print_pydantic_meta import llm_json_text
 import femtomeas.workflow_manager as wfman
-from .observable_info import observableSkills
+from .action_config import identifyActions
+from .observable_info import observableSkills, identifyObservables
 from .source_config import identifySources
 from .eigenvectors import setupEigenSolvers
 from .solver_config import identifySolvers

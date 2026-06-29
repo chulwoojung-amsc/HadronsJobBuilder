@@ -67,7 +67,17 @@ def prettyPrintPydantic(instance)->str:
         return pydantic_to_markdown(instance, mode="table")
     else:
         assert 0
-        
+
+def prettyPrintPythonCode(code)->str:
+    global output_style
+    if output_style == "plain":
+        return code
+    else:
+        return f"""```python
+{code}
+```
+"""
+
 @tool
 def getUserInput(query: str) -> str:
     """

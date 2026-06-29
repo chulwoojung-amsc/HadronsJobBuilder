@@ -14,7 +14,7 @@ from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from langchain.agents import create_agent
 from langchain.agents.middleware import before_model, after_model, AgentState, dynamic_prompt, ModelRequest
 import json
-from .common import queryYesNo, prettyPrintPydantic, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput
+from .common import queryYesNo, prettyPrintPydantic, prettyPrintPythonCode, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput
 from langchain.tools import tool
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.runtime import Runtime
@@ -350,7 +350,7 @@ Current code for generating {output_type_name} params structs
                     continue
 
             #Human validation                        
-            AgentPrint(f"Obtained:\n" + prettyPrintPydantic(resp_struct.code))
+            AgentPrint(f"Obtained:\n" + prettyPrintPythonCode(resp_struct.code))
             
             accepted = queryYesNo("Is this correct?")
             
