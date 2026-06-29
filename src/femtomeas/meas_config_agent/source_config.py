@@ -16,6 +16,8 @@ from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_output_agent import parameterAgent
 from femtomeas.meas_config_agent.meas_agent_common import Gammas
 
+def momentumStr(mom):
+    return "0. 0. 0. 0." if mom == None else spaceSeparateSeq(mom)
 
 class PointSource(BaseModel):
     """A point or single-location source"""
@@ -40,7 +42,7 @@ class WallSource(BaseModel):
 
     def setXML(self,name,xml):
         opt = xml.addModule(name,"MSource::Wall")
-        HadronsXML.setValues(opt, [ ("tW",self.timeslice), ("mom", "0. 0. 0. 0." if self.momentum == None else spaceSeparateSeq(self.momentum) ) ])
+        HadronsXML.setValues(opt, [ ("tW",self.timeslice), ("mom", momentumStr(self.momentum)  ) ])
 
     def check(self, state, src_names):
         return (True, "")
@@ -61,7 +63,15 @@ class SeqGammaSource(BaseModel):
     q_prop_info: str= Field(...,description="Other information associated with the input propagator provided by the user")
     
     def setXML(self,name,xml):
-        pass
+        opt = xml.addModule(name,"MSource::SeqGamma")
+        HadronsXML.setValues(opt, 
+                             [
+                                ("q", self.q),
+                                ("tA", self.t_a),
+                                ("tB", self.t_b),
+                                ("gamma", self.gamma),
+                                ("mom", momentumStr(self.momentum) )                                  
+                              ])
     
     def check(self, state, src_names):
         if self.q_source_name not in src_names:
