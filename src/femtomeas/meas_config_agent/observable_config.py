@@ -78,9 +78,26 @@ class Meson2ptConfig(BaseModel):
                 reason = reason + "\n" + r[1]
         return (result, reason)
    
+
+class WritePropagators(BaseModel):
+    """List of propagators to write to disk and their filestems (filename without .${CFG}.bin extension)"""
+    type: Literal["write_propagators"] = "write_propagators"
+    write_props : List[ Tuple[str,str] ] = Field(..., description="List of propagator name, local filestem pairs")
+
+    def setXML(self, xml):
+        for p in self.write_props:
+            nm = p[0] + "_write"
+            opt = xml.addModule(nm, "MIO::SavePropagator")
+            HadronsXML.setValues(opt, [ ("name", p[0]), ("fileStem", p[1]) ])
+
+    def check(self, state):
+        props = [p[0] for p in self.write_props]
+        return validateProps(props)
+
+
 class ObservableConfig(BaseModel):
     """An instance of an observable."""
-    obs: Union[Meson2ptConfig] = Field(...,description="The observation instance and configuration.", discriminator='type')
+    obs: Union[Meson2ptConfig, WritePropagators] = Field(...,description="The observation instance and configuration.", discriminator='type')
 
     def setXML(self, xml):
         self.obs.setXML(xml)

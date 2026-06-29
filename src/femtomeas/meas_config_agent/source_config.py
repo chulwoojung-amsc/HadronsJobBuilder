@@ -46,14 +46,69 @@ class WallSource(BaseModel):
 
     def check(self, state, src_names):
         return (True, "")
-        
+
+class VolumeMomentumSource(BaseModel):
+    """A volume-momentum source aka plane-wave source   src_x = e^{sum_k 2pi i p_k x_k /L_k} """
+    type: Literal["volume_momentum"] = "volume_momentum"
+    momentum: Tuple[float,float,float,float] = Field(..., description="The four-momentum")
+
+    def setXML(self,name,xml):
+        opt = xml.addModule(name,"MSource::Momentum")
+        HadronsXML.setValue(opt, "mom", momentumStr(self.momentum))
+
+    def check(self, state, src_names):
+        return (True, "")
+
+
+class Z2BandSource(BaseModel):
+    """A wall or band source (distinguished by whether it exists on one or more timeslices) with Z2 random numbers"""
+    type: Literal["z2"] = "z2"
+    tA: NonNegativeInt = Field(..., description="Start timeslice of the band source")
+    tB: NonNegativeInt = Field(..., description="End timeslice of the band source")    
+
+    def setXML(self,name,xml):
+        opt = xml.addModule(name,"MSource::Z2")
+        HadronsXML.setValues(opt, [ ("tA",self.tA), ("tB", self.tB) ])
+
+    def check(self, state, src_names):
+        if(self.tA > self.tB):
+            return (False, "End timeslice is before start timeslice")
+        return (True, "")
+
+
+class GaussianSmearedPointSource(BaseModel):
+    """
+    A gaussian-smeared point source,      [ 1/(sqrt(2*pi)*width)^3 ] exp(-i sum_{i=0}^{3} (x_i - position_i)^2/(2 width^2)  + 2pi i sum_{i=0}^4 mom_i x_i/L_i )    for  tA <= x_3 <= tB
+    """
+    type: Literal["gauss"] = "gauss"
+    position: Tuple[NonNegativeInt,NonNegativeInt,NonNegativeInt] = Field(..., description="The spatial position of the center of the Gaussian")
+    momentum: Tuple[NonNegativeInt,NonNegativeInt,NonNegativeInt,NonNegativeInt] = Field(..., description="The integer four-momentum")
+    tA: NonNegativeInt = Field(..., description="Start timeslice of the source")
+    tB: NonNegativeInt = Field(..., description="End timeslice of the source")    
+    width: float = Field(..., description="The width of the Gaussian")
+
+    def setXML(self,name,xml):
+        opt = xml.addModule(name,"MSource::Gauss")
+        HadronsXML.setValues(opt, [ ("position", spaceSeparateSeq(self.position)), ("mom", momentumStr(self.momentum)), ("tA",self.tA), ("tB", self.tB), ("width", self.width) ])
+
+    def check(self, state, src_names):
+        if(self.tA > self.tB):
+            return (False, "End timeslice is before start timeslice")
+        return (True, "")
+ 
+
+
+
+
+
+
 class SeqGammaSource(BaseModel):
     """A sequential propagator source where a source is constructed from the slice of a propagator between two timeslices with a specific gamma matrix structure and momentum,
        src_x = q_x * theta(x_3 - tA) * theta(tB - x_3) * gamma * exp(i x.mom)
     """
     type: Literal["seq_gamma"] = "seq_gamma"
-    t_a : int = Field(..., description="Start timeslice of sequential source")
-    t_b : int = Field(..., description="End timeslice of sequential source")
+    t_a : NonNegativeInt = Field(..., description="Start timeslice of sequential source")
+    t_b : NonNegativeInt = Field(..., description="End timeslice of sequential source")
     gamma: Gammas = Field(...,description="Gamma-matrix structure of the sequential source")
     momentum: Optional[Tuple[float,float,float,float]] = Field(
         None, description="Optional four-momentum"
@@ -78,11 +133,16 @@ class SeqGammaSource(BaseModel):
             return (False, f"Source {self.q_source_name} for input propagator {self.q} does not exist in the list of sources")
         return (True,"")
         
+
+
     
+
+
+
 class SourceConfig(BaseModel):
     name : str = Field(..., description="The name/tag for the source")
-    source: Union[PointSource, WallSource,SeqGammaSource] = Field(
-        ..., description="Information about the source.", discriminator='type'  # Each item must have a 'type' field. Valid values are: 'point', 'wall'  
+    source: Union[PointSource, WallSource,SeqGammaSource,VolumeMomentumSource,Z2BandSource,GaussianSmearedPointSource] = Field(
+        ..., description="Information about the source.", discriminator='type'
     )
     user_info: str = Field(..., description="Additional information (if any) provided by the user on what observables/propagators this source will be used for")
     

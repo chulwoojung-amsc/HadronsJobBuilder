@@ -60,6 +60,9 @@ class HadronsXML:
         self.setValue(self.genetic, "maxCstGen", 100)
         self.setValue(self.genetic, "mutationRate", 0.1)
 
+        self.scheduler = ET.SubElement(self.parameters, "scheduler")
+        self.setValue(self.scheduler, "schedulerType", "genetic")
+
         self.setValue(self.parameters, "graphFile", "")
         self.setValue(self.parameters, "scheduleFile", "")
         self.setValue(self.parameters, "saveSchedule", "false")
@@ -116,4 +119,4 @@ class HadronsXML:
         self.trajcounter = _getck(self.parameters,"trajCounter")
         self.database = _getck(self.parameters,"database")
         self.genetic = _getck(self.parameters,"genetic")
-    
+        self.scheduler = _getck(self.parameters, "scheduler")                                
