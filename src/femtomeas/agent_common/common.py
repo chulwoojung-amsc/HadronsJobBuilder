@@ -28,7 +28,7 @@ def storeListAppend(key, value, store):
     store.put(("ns",), key, ll)
 
 
-##Chatbot IO controls
+##Default IO functions for cmdline tool
 def cmdlinePrint(*args, **kwargs):
     print(*args, *kwargs)
 def cmdlineInput(query):
@@ -40,14 +40,24 @@ output_style = "plain" #supports markdown for prettier printing
 #Control which functions are used for text input and output to the chatbot
 print_func = cmdlinePrint
 input_func = cmdlineInput
-   
+log_stream = None
+
 def Print(*args, **kwargs):
-    global print_func
+    global print_func, log_stream
+    if log_stream is not None:
+        print("\n#########################\nAI: ", file=log_stream)
+        print(*args, *kwargs, file=log_stream, flush=True)
+
     print_func(*args, *kwargs)
         
 def Input(query):
-    global input_func
-    return input_func(query)
+    global input_func, log_stream
+    out = input_func(query)
+    if log_stream is not None:
+        print("\n#########################\nAI:\n %s" % query, file=log_stream)
+        print("\n#########################\nHuman:\n %s" % out, file=log_stream, flush=True)
+
+    return out
 
 
 def prettyPrintPydantic(instance)->str:

@@ -16,6 +16,7 @@ from .propagator_config import PropagatorConfig
 from .observable_config import ObservableConfig
 from .eigenvectors import EigenSolverConfig
 
+
 def checkpointState(state, filename):
     #j = json.dumps({k: v.model_dump() for k, v in state.items()}, indent=2)
     j=json.loads(state.model_dump_json())
@@ -36,6 +37,7 @@ class State(BaseModel):
     eigensolvers: str | None = Field(None,description="Code for generating eigensolver instances")
     solvers: str | None = Field(None,description="Code for generating the solver instances")
     propagators: str | None = Field(None,description="Code for generating the propagator instances")
+    smeared_propagators: str | None = Field(None,description="Code for generating smeared propagator instances")
     observable_configs : str | None = Field(None,description="Code for generating observable instances")
     gauge: GaugeFieldConfig | None = Field(None,description="The gauge configuration parameters")
 
@@ -99,6 +101,18 @@ class State(BaseModel):
                 return True
         return False
 
+    def isValidSmearedPropagator(self, sprop_name):
+        r, e = executeCode(self.smeared_propagators)
+        if len(e) > 0:
+            raise Exception(f"Executing code gave the following exceptions: {e}")
+        assert "result" in r.keys()
+        smeared_props = r["result"]
+
+        for p in smeared_props:
+            if p["name"] == sprop_name:
+                return True
+        return False
+
     def _toHadronsXMLbase(self)->HadronsXML:
         """
         Set all elements bar the gauge module, which needs special treatment
@@ -106,17 +120,12 @@ class State(BaseModel):
         xml = HadronsXML()
         xml.setRunID(1234) #What does this do?
 
-        for c in [(self.actions, ActionConfig), (self.sources, SourceConfig), (self.eigensolvers, EigenSolverConfig), (self.solvers, SolverConfig), (self.propagators, PropagatorConfig), (self.observable_configs, ObservableConfig)]:            
+        for c in [(self.actions, ActionConfig), (self.sources, SourceConfig), (self.eigensolvers, EigenSolverConfig), (self.solvers, SolverConfig), (self.propagators, PropagatorConfig), (self.sinks, SinkConfig), (self.observable_configs, ObservableConfig)]:            
             r, e = executeCodeAndParse(*c)
             if len(e) > 0:
                 raise Exception(f"Executing code for type {c[1]} gave the following exceptions: {e}")
             for a in r:
                 a.setXML(xml)
-
-        #Temporary; add a zero-momentum point sink for two-point functions
-        #TODO: Have the observables agent also construct sinks as needed
-        snk = xml.addModule("point_sink_zerop", "MSink::ScalarPoint")
-        HadronsXML.setValue(snk, "mom", "0. 0. 0.")
         
         return xml
     
@@ -145,6 +154,7 @@ from femtomeas.meas_config_agent.action_config import ActionConfig
 from femtomeas.meas_config_agent.source_config import SourceConfig
 from femtomeas.meas_config_agent.solver_config import SolverConfig
 from femtomeas.meas_config_agent.propagator_config import PropagatorConfig
+from femtomeas.meas_config_agent.smeared_prop_config import SmearedPropagatorConfig
 from femtomeas.meas_config_agent.observable_config import ObservableConfig
 from femtomeas.meas_config_agent.gauge import GaugeFieldConfig
 from femtomeas.meas_config_agent.eigenvectors import EigenSolverConfig                    
@@ -181,6 +191,12 @@ def propagators(xml):
         rm = PropagatorConfig.model_validate(r)
         rm.setXML(xml)          
 
+def smeared_propagators(xml):
+{indent(self.smeared_propagators, '    ')}
+    for r in result:
+        rm = SmearedPropagatorConfig.model_validate(r)
+        rm.setXML(xml)              
+
 def observables(xml):
 {indent(self.observable_configs, '    ')}
     for r in result:
@@ -198,17 +214,12 @@ if len(sys.argv) == 0:
 xml = HadronsXML()
 xml.setRunID(1234) #What does this do?        
 
-
-#Temporary; add a zero-momentum point sink for two-point functions
-#TODO: Have the observables agent also construct sinks as needed
-snk = xml.addModule("point_sink_zerop", "MSink::ScalarPoint")
-HadronsXML.setValue(snk, "mom", "0. 0. 0.")
-
 actions(xml)
 sources(xml)
 eigensolvers(xml)
 solvers(xml)
 propagators(xml)
+smeared_propagators(xml)
 observables(xml)
 gauge(xml)
 

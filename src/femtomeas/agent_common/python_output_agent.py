@@ -217,7 +217,8 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     - The code field must contain correct Python inside a string.
     - Use Python True/False for boolean fields
     - You cannot use any libraries within the code. 
-    - The {output_type_name} structure instances must be stored to a list with name 'result'
+    - The {output_type_name} structure instances must be stored to a list with name 'result' that is initialized to an empty list. This list must contain ONLY {output_type_name} structures.
+    - NEVER duplicate code or instances from previous sections. Your list must include ONLY the {output_type_name} structures that YOU create.
     - You must use for loops to iterate over parameter values if there are more than 3 values.
     - Try to make the code as short as possible while still remaininng intelligible. For instance:
         - If you have a loop involving {output_type_name} that share multiple parameters, instantiate a base instance outside the loop with those static parameters set, and take copies within the loop to set the values that differ.
@@ -228,7 +229,8 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     - You must output the updated code in every response, even if some parameters are still unknown.
     - You must follow all rules (general and specific) provided in this prompt regarding the {output_type_name} parameters you record. 
     - If recording a parameter that belongs to one of a list of structure instances and you don't yet know how many instances will be needed, instantiate a single instance and record the parameter there.
-    
+    - The code you write must only pertain to creating {output_type_name} structures.
+
 {param_rules_header}    
 
 {promptStringList(parameter_rules,4)}
@@ -283,9 +285,13 @@ Current code for generating {output_type_name} params structs
             continue
 
         #Check it followed the rules about questions/answers
-        if resp_struct.done and ( len(resp_struct.question_to_user) > 0 or  len(resp_struct.answer_to_user) > 0 ):
-            user_interactions.append(HumanMessage("You cannot answer or ask a question if 'done' is set to True"))
-            print("DONE TRUE BUT QUESTION",resp_struct.question_to_user,"OR ANSWER",resp_struct.answer_to_user)
+        # if resp_struct.done and ( len(resp_struct.question_to_user) > 0 or  len(resp_struct.answer_to_user) > 0 ):
+        #     user_interactions.append(HumanMessage("You cannot answer or ask a question if 'done' is set to True"))
+        #     print("DONE TRUE BUT QUESTION",resp_struct.question_to_user,"OR ANSWER",resp_struct.answer_to_user)
+        #     continue
+        if resp_struct.done and len(resp_struct.question_to_user) > 0:
+            user_interactions.append(HumanMessage("You cannot ask a question if 'done' is set to True"))
+            print("DONE TRUE BUT QUESTION",resp_struct.question_to_user)
             continue
         if not resp_struct.done and len(resp_struct.question_to_user) == 0:
             user_interactions.append(HumanMessage("Your response must include a question unless you are done"))
@@ -349,10 +355,15 @@ Current code for generating {output_type_name} params structs
                     user_interactions.append(HumanMessage(f"There was an error when validating the collection of model instances for correctness: {valid[1]}"))
                     continue
 
+            #Allow the agent to make a closing statement, e.g. in response to fixing a previous validation error
+            if len(resp_struct.answer_to_user) > 0:                                            
+                user_interactions.append(AIMessage(resp_struct.answer_to_user))
+                AgentPrint(resp_struct.answer_to_user)
+
             #Human validation                        
             AgentPrint(f"Obtained:\n" + prettyPrintPythonCode(resp_struct.code))
             
-            accepted = queryYesNo("Is this correct?")
+            accepted = queryYesNo("Is this code correct?")
             
             if(accepted == False):
                 reason = AgentInput("Explain what is wrong: ")

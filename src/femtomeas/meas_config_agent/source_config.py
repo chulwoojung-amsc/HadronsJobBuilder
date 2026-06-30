@@ -76,9 +76,10 @@ class Z2BandSource(BaseModel):
         return (True, "")
 
 
-class GaussianSmearedPointSource(BaseModel):
+class GaussianSource(BaseModel):
     """
-    A gaussian-smeared point source,      [ 1/(sqrt(2*pi)*width)^3 ] exp(-i sum_{i=0}^{3} (x_i - position_i)^2/(2 width^2)  + 2pi i sum_{i=0}^4 mom_i x_i/L_i )    for  tA <= x_3 <= tB
+    A gaussian source centered at some position,      [ 1/(sqrt(2*pi)*width)^3 ] exp(-i sum_{i=0}^{3} (x_i - position_i)^2/(2 width^2)  + 2pi i sum_{i=0}^4 mom_i x_i/L_i )    for  tA <= x_3 <= tB
+    If the user wants a point source, use PointSource instead    
     """
     type: Literal["gauss"] = "gauss"
     position: Tuple[NonNegativeInt,NonNegativeInt,NonNegativeInt] = Field(..., description="The spatial position of the center of the Gaussian")
@@ -141,7 +142,7 @@ class SeqGammaSource(BaseModel):
 
 class SourceConfig(BaseModel):
     name : str = Field(..., description="The name/tag for the source")
-    source: Union[PointSource, WallSource,SeqGammaSource,VolumeMomentumSource,Z2BandSource,GaussianSmearedPointSource] = Field(
+    source: Union[PointSource, WallSource,SeqGammaSource,VolumeMomentumSource,Z2BandSource,GaussianSource] = Field(
         ..., description="Information about the source.", discriminator='type'
     )
     user_info: str = Field(..., description="Additional information (if any) provided by the user on what observables/propagators this source will be used for")
@@ -156,12 +157,8 @@ def identifySources(model, state, user_interactions: list[BaseMessage]) -> str:
     role = """creating instances of SourceConfig for every propagator source required by the user.
 
     Previous agent interactions have identified a set of observables and their required number of propagators. Sources are inputs to constructing those propagators. A source instance has a source type (e.g. point, wall) along with a set of parameters that depend on the source type. Each propagator requires a source, but can share the same source instance.
-    """
 
-    parameter_rules = [
-        """sources:
-          
-  Perform the following workflow:
+    Perform the following workflow:
     1) Check the message history to see if the source types of the required propagators has been specified.
 
        If the source types have not yet been specified:
@@ -180,9 +177,14 @@ def identifySources(model, state, user_interactions: list[BaseMessage]) -> str:
   - Create a separate entry for each unique collection of source parameters, for example if the user specified propagators with point sources at [0,0,0,0] and [12,24,12,24], create two separate source instances with different source locations.
   - Create a separate entry for each source instance, even if the same source type appears multiple times with different parameters.
   - Your list must include every source instance explicitly mentioned, and only those. Do not invent instances. Do not combine instances unless the user explicitly describes them as the same.
-  - Only create separate entries for sources whose source parameters differ, even if those sources will be associated with different actions in their associated propagators. For instance, if there are two action instances, 'action_a' and 'action_b' which both need wall sources with t=0, create only one wall source instance.""",
+  - Only create separate entries for sources whose source parameters differ, even if those sources will be associated with different actions in their associated propagators. For instance, if there are two action instances, 'action_a' and 'action_b' which both need wall sources with t=0, create only one wall source instance.
 
+  Notes:
+  - Do not confuse sink smearing and sources. Sink smearing is performed on the solutions of inverting the Dirac matrix upon a source, and is entirely independent from the form of the source.
+  - When the user asks for a point source, assume that they mean PointSource and NOT GaussianSource unless they specifically mention the gaussian source
+    """
 
+    parameter_rules = [
        """SourceConfig.name:
   - You must assign a unique tag/name to the instance via the SourceConfig.name field. Do not ask the user to specify a tag.
   - Never use the same tag for different instances.

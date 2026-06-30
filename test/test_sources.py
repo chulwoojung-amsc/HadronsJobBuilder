@@ -1,4 +1,4 @@
-from femtomeas.meas_config_agent.source_config import SeqGammaSource, PointSource, VolumeMomentumSource, Z2BandSource, GaussianSmearedPointSource
+from femtomeas.meas_config_agent.source_config import SeqGammaSource, PointSource, VolumeMomentumSource, Z2BandSource, GaussianSource
 from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 from femtomeas.meas_config_agent.gauge import UnitGauge
 from femtomeas.meas_config_agent.action_config import DWFaction
@@ -29,7 +29,7 @@ z2prop = PropagatorConfig(name="z2prop", source="z2", solver="solv", user_info="
 z2prop.setXML(xml)
 
 
-gauss = GaussianSmearedPointSource(position=(0,0,0), momentum=(1,0,1,0), tA=0, tB=1, width=2.0)
+gauss = GaussianSource(position=(0,0,0), momentum=(1,0,1,0), tA=0, tB=1, width=2.0)
 gauss.setXML("gauss",xml)
 
 gaussprop = PropagatorConfig(name="gaussprop", source="gauss", solver="solv", user_info="")
