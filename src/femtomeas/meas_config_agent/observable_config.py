@@ -217,4 +217,4 @@ def configureObservables(model, state, user_interactions: list[BaseMessage]) -> 
     def instanceCheck(obs):
         return obs.check(state)
 
-    return parameterAgent(model, ObservableConfig, role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, input_messages=user_interactions, instance_validator=instanceCheck)
+    return parameterAgent(model, ObservableConfig, "observable_configs", role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, input_messages=user_interactions, instance_validator=instanceCheck)

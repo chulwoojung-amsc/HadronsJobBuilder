@@ -266,11 +266,8 @@ Current {output_type_name} params struct
                 if not isinstance(e, AttributeError):
                     raise Exception(f"Validation threw an error, {e}")
                 
-            #Human validation
-            output = f"Obtained:\n" + prettyPrintPydantic(obj)
-            AgentPrint(output)
-            
-            accepted = queryYesNo("Is this correct?")
+            #Human validation            
+            accepted = queryYesNo("Is the following correct?", "\n" + prettyPrintPydantic(obj))
             
             if(accepted == False):
                 reason = AgentInput("Explain what is wrong: ")

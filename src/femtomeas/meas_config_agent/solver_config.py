@@ -110,4 +110,4 @@ Previous agent interactions have identified a set of observables and their requi
     "When asking a question referring to a group, ensure your question clearly identifies the group."
     ]
 
-    return parameterAgent(model, SolverConfig, role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions, additional_user_query_rules=additional_user_query_rules)
+    return parameterAgent(model, SolverConfig, "solvers", role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions, additional_user_query_rules=additional_user_query_rules)

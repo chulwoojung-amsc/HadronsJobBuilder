@@ -88,4 +88,4 @@ def identifyActions(model, user_interactions: list[BaseMessage]) -> str:
   - If the user does not specify any details, use an empty string. For example, if the user specifies that this action will be used for light quark propagators, enter "use for all light quark propagators" in user_info.""" ]
 
 
-    return parameterAgent(model, ActionConfig, role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions)
+    return parameterAgent(model, ActionConfig, "actions", role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions)

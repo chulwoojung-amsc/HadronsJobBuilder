@@ -10,6 +10,16 @@ from langchain.messages import (
 import femtomeas.agent_common.common as common
 from femtomeas.meas_config_agent.agent import agent
 import io
+import json
+from femtomeas.meas_config_agent.action_config import ActionConfig
+from femtomeas.meas_config_agent.source_config import SourceConfig
+from femtomeas.meas_config_agent.eigenvectors import EigenSolverConfig
+from femtomeas.meas_config_agent.solver_config import SolverConfig
+from femtomeas.meas_config_agent.propagator_config import PropagatorConfig
+from femtomeas.meas_config_agent.smeared_prop_config import SmearedPropagatorConfig
+from femtomeas.meas_config_agent.observable_config import ObservableConfig
+from femtomeas.meas_config_agent.gauge import GaugeFieldConfig
+from femtomeas.meas_config_agent.observable_info import ObservableInfo
 
 #For agent-based verification
 auto_eval_messages = None
@@ -106,6 +116,7 @@ Rules for responses
 - You must directly answer the questions provided by the tool. 
 - Do not volunteer additional information unless specifically requested. 
 - Keep your output minimal and to the point, do not be overly verbose. Prefer a conversational, humanlike response format rather than a structured output.
+- NEVER respond to a question with code or JSON; your responses must be in plain English, mimicking the way that a user would respond to the question.
 - If you don't know what value to use for a parameter, you can either choose a value or ask the tool to suggest a value.                    
 - You can ask the tool to suggest appropriate values for parameters, but do not ask the tool to make decisions for you. You and not the tool must make all decisions.
 - *Never* ask the tool what value it would "like to use" or "wants". Never ask the tool to "specify" or "give" a value. The tool is only allowed to offer suggestions. If you want a suggestion, ask the tool to "suggest" a value.
@@ -113,24 +124,57 @@ Rules for responses
 - If you specify a parameter value but the tool misunderstands and selects a different value, you *must* correct the tool.
 - Never specify names for instances unless the tool explicitly asks you too.
 - Never ask the tool to confirm values.
-- Never send code or JSON to the tool; your responses must be in plain text
-                                                                            
+- The question "Is this code correct? [y/n]" MUST be interpreted as asking whether the code snippet creates the appropriate set of dictionary structures.
+    - The schemas are provided in the corresponding sections below        
+    - Check only the parameter values.
+    - The parameters 'name' and 'user_info' are assigned internally by the tool, do not check these.
+- When asked "Is this code correct? [y/n]" it is not correct, you MUST answer 'n' with NO OTHER TEXT. To explain why the code is incorrect you MUST wait for the tool to ask you why. 
+    - When explaining why the code is incorrect, NEVER respond with code or JSON; use plain text language to describe why it is wrong.    
+               
+                                                                                                                  
 -----------------
 Yes/no questions
 -----------------                                                         
 - If asked a question that contains '[y/n]' you *MUST* respond either the single character 'y' (for yes) or the single character 'n' (for no). Do not include any other text in your response.
-                   
+
+----------------                   
+Notes:
+----------------
+- Do not confuse sink smearing and sources. Sink smearing is performed on the solutions of inverting the Dirac matrix upon a source, and is entirely independent from the form of the source.
+- Do not describe non-local sources as "smeared" sources.
+
 Stage-specific guidance
 -----------------------
 
+IDENTIFY OBSERVABLES
+- The schema for the dictionary is {json.dumps(ObservableInfo.model_json_schema())}
+
+ACTIONS
+- The schema for the dictionary is {json.dumps(ActionConfig.model_json_schema())}
+
 SOURCES
 - Ensure your response clarifies which observable the source is associated with.
+- The schema for the dictionary is {json.dumps(SourceConfig.model_json_schema())}
+
+EIGENSOLVERS
+- The schema for the dictionary is {json.dumps(EigenSolverConfig.model_json_schema())}
+
+SOLVERS
+- The schema for the dictionary is {json.dumps(SolverConfig.model_json_schema())}
 
 PROPAGATORS
 - This stage is for non-sink-smeared propagators. Do not mention sink smeared propagators here.
+- The schema for the dictionary is {json.dumps(PropagatorConfig.model_json_schema())}
 
 SMEARED PROPAGATORS
-- This stage is for sink-smeared propagators only.                   
+- This stage is for sink-smeared propagators only. 
+- The schema for the dictionary is {json.dumps(SmearedPropagatorConfig.model_json_schema())}
+
+OBSERVABLE CONFIGURATIONS
+- The schema for the dictionary is {json.dumps(ObservableConfig.model_json_schema())}
+
+GAUGE CONFIGURATIONS
+- The schema for the dictionary is {json.dumps(GaugeFieldConfig.model_json_schema())}
 
 The initial query to the tool is as follows:
 ===============================
@@ -152,8 +196,15 @@ common.log_stream = open("auto_eval.log", 'w')
 
 print("\n#########################\nHuman:\n %s" % query, file=common.log_stream, flush=True)  
 
-agent(query, llm)
+state = agent(query, llm)
 
 common.log_stream.close()
 
+state.toHadronsXML()
+
+gen_code = io.StringIO()
+
+state.toXMLgeneratorCodeStream(gen_code)
+
+exec(gen_code.getvalue())
 

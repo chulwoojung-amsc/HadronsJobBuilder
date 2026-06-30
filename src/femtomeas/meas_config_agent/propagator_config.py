@@ -64,4 +64,4 @@ Propagator instance rules:
             names.append(r.name)
         return (valid, invalid_why)
 
-    return parameterModelCall(model, PropagatorConfig, role, input_messages = user_interactions, instance_validator=instanceCheck, group_validator=groupCheck)
+    return parameterModelCall(model, PropagatorConfig, "propagators", role, input_messages = user_interactions, instance_validator=instanceCheck, group_validator=groupCheck)

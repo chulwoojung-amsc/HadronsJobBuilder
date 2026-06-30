@@ -88,4 +88,4 @@ def identifySmearedPropagators(model, state, user_interactions: list[BaseMessage
                 reason += f"\nsprops[{i}] ({sprops[i].name}): {p[1]}"
         return (val,reason)
 
-    return parameterAgent(model, SmearedPropagatorConfig, role, tools=[], input_messages=user_interactions, parameter_rules=parameter_rules, group_validator=checkAll )
+    return parameterAgent(model, SmearedPropagatorConfig, "smeared_propagators", role, tools=[], input_messages=user_interactions, parameter_rules=parameter_rules, group_validator=checkAll )

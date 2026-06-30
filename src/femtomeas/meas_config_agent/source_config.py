@@ -181,6 +181,7 @@ def identifySources(model, state, user_interactions: list[BaseMessage]) -> str:
 
   Notes:
   - Do not confuse sink smearing and sources. Sink smearing is performed on the solutions of inverting the Dirac matrix upon a source, and is entirely independent from the form of the source.
+  - Do not describe non-local sources as "smeared" sources.
   - When the user asks for a point source, assume that they mean PointSource and NOT GaussianSource unless they specifically mention the gaussian source
     """
 
@@ -246,4 +247,4 @@ def identifySources(model, state, user_interactions: list[BaseMessage]) -> str:
                 reason += f"\nsources[{i}] ({sources[i].name}): {p[1]}"
         return (val,reason)
 
-    return parameterAgent(model, SourceConfig, role, tools=[], input_messages=user_interactions, parameter_rules=parameter_rules, group_validator=checkAll )
+    return parameterAgent(model, SourceConfig, "sources", role, tools=[], input_messages=user_interactions, parameter_rules=parameter_rules, group_validator=checkAll )

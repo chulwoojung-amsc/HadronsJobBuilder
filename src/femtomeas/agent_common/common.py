@@ -107,10 +107,13 @@ def provideInformationToUser(description: str):
     """
     Print(description)
 
-def queryYesNo(query: str)->bool:
+def queryYesNo(query: str, body="")->bool:
     result = ""
-    while(result not in ["y","n"]):    
-        result = Input(query + " [y/n]")
+    while(result not in ["y","n"]):
+        if result == "":
+            result = Input(query + " [y/n]" + body)
+        else:        
+            result = Input(f"You must answer with either 'y' or 'n'. {query}{body}")
         print("QUERY YES/NO RECEIVED",result,"VALID ?", result in ["y","n"] )
 
     print("QUERY YES/NO GOT VALID RESPONSE")
