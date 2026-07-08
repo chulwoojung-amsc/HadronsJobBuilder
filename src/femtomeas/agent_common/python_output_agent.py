@@ -83,13 +83,13 @@ def executeCode(code):
             errors.append(f"{e[0]}:{e[1]}\n")
     return aeval.symtable, errors            
     
-def executeCodeAndParse(code, model):
+def executeCodeAndParse(code, model, output_list_name):
     syms, errors = executeCode(code)
     if len(errors) > 0:
         return ([],errors)
     
     parsed = []
-    for r in syms["result"]:
+    for r in syms[output_list_name]:
         try:
             mval = model.model_validate(r)
         except Exception as e:
@@ -102,7 +102,7 @@ def executeCodeAndParse(code, model):
 
 
 
-def parameterAgent(llm_model, structured_output_model : BaseModel,
+def parameterAgent(llm_model, structured_output_model : BaseModel, output_list_name: str,
                    role: str, tools,
                    tool_rules : List[str] = [],
                    parameter_rules : List[str] = [],
@@ -215,9 +215,11 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     These rules apply to the code for generating the {output_type_name} structures you must record in the "code" field of your output
     ------------------------------------------    
     - The code field must contain correct Python inside a string.
+    - The code must produce jsonable Python dictionaries according to schema below.
     - Use Python True/False for boolean fields
     - You cannot use any libraries within the code. 
-    - The {output_type_name} structure instances must be stored to a list with name 'result'
+    - The {output_type_name} structure instances must be stored to a list with name '{output_list_name}' that is initialized to an empty list. This list must contain ONLY {output_type_name} structures.
+    - NEVER duplicate code or instances from previous sections. Your list must include ONLY the {output_type_name} structures that YOU create.
     - You must use for loops to iterate over parameter values if there are more than 3 values.
     - Try to make the code as short as possible while still remaininng intelligible. For instance:
         - If you have a loop involving {output_type_name} that share multiple parameters, instantiate a base instance outside the loop with those static parameters set, and take copies within the loop to set the values that differ.
@@ -228,6 +230,8 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     - You must output the updated code in every response, even if some parameters are still unknown.
     - You must follow all rules (general and specific) provided in this prompt regarding the {output_type_name} parameters you record. 
     - If recording a parameter that belongs to one of a list of structure instances and you don't yet know how many instances will be needed, instantiate a single instance and record the parameter there.
+    - The code you write must only pertain to creating {output_type_name} structures.
+    - Your code cannot call any of the tools you have access to.
     
 {param_rules_header}    
 
@@ -244,7 +248,7 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     ------------------------------
     Schema for {output_type_name} 
     ------------------------------
-    Follow this schema within your "code" output
+    Your "code" output must produce jsonable Python dictionaries according to the following schema:
     """ + json.dumps(structured_output_model.model_json_schema())
     
     config = {"configurable": {"thread_id": "1", "stream" : False}}
@@ -283,9 +287,13 @@ Current code for generating {output_type_name} params structs
             continue
 
         #Check it followed the rules about questions/answers
-        if resp_struct.done and ( len(resp_struct.question_to_user) > 0 or  len(resp_struct.answer_to_user) > 0 ):
-            user_interactions.append(HumanMessage("You cannot answer or ask a question if 'done' is set to True"))
-            print("DONE TRUE BUT QUESTION",resp_struct.question_to_user,"OR ANSWER",resp_struct.answer_to_user)
+        # if resp_struct.done and ( len(resp_struct.question_to_user) > 0 or  len(resp_struct.answer_to_user) > 0 ):
+        #     user_interactions.append(HumanMessage("You cannot answer or ask a question if 'done' is set to True"))
+        #     print("DONE TRUE BUT QUESTION",resp_struct.question_to_user,"OR ANSWER",resp_struct.answer_to_user)
+        #     continue
+        if resp_struct.done and len(resp_struct.question_to_user) > 0:
+            user_interactions.append(HumanMessage("You cannot ask a question if 'done' is set to True"))
+            print("DONE TRUE BUT QUESTION",resp_struct.question_to_user)
             continue
         if not resp_struct.done and len(resp_struct.question_to_user) == 0:
             user_interactions.append(HumanMessage("Your response must include a question unless you are done"))
@@ -313,15 +321,15 @@ Current code for generating {output_type_name} params structs
                 print("ERRORS", errors)
                 user_interactions.append(HumanMessage(f"Running your code produced error(s): {errors}"))      
                 continue
-            if "result" not in aeval.symtable:
-                print("SYMTABLE DOESNT CONTAIN RESULT", aeval.symtable.keys())
-                user_interactions.append(HumanMessage(f"Your code does not create the 'result' list"))
+            if output_list_name not in aeval.symtable:
+                print(f"SYMTABLE DOESNT CONTAIN {output_list_name}", aeval.symtable.keys())
+                user_interactions.append(HumanMessage(f"Your code must create a list named '{output_list_name}'"))
                 continue 
 
             #Automatic validation
             vfail = False
             parsed_results = [] #not kept, just used for validation
-            for r in aeval.symtable["result"]:                                
+            for r in aeval.symtable[output_list_name]:                                
                 try:
                     mval = structured_output_model.model_validate(r)
                 except Exception as e:
@@ -349,11 +357,14 @@ Current code for generating {output_type_name} params structs
                     user_interactions.append(HumanMessage(f"There was an error when validating the collection of model instances for correctness: {valid[1]}"))
                     continue
 
-            #Human validation                        
-            AgentPrint(f"Obtained:\n" + prettyPrintPythonCode(resp_struct.code))
-            
-            accepted = queryYesNo("Is this correct?")
-            
+            #Allow the agent to make a closing statement, e.g. in response to fixing a previous validation error
+            if len(resp_struct.answer_to_user) > 0:                                            
+                user_interactions.append(AIMessage(resp_struct.answer_to_user))
+                AgentPrint(resp_struct.answer_to_user)
+
+            #Human validation
+            accepted = queryYesNo("Is the following code correct?", "\n" + prettyPrintPythonCode(resp_struct.code))            
+
             if(accepted == False):
                 reason = AgentInput("Explain what is wrong: ")
                 agent_state.done = False
@@ -396,7 +407,7 @@ Current code for generating {output_type_name} params structs
 class ParameterModelCallOutput(BaseModel):
     code: str = Field(..., description="The output code")
 
-def parameterModelCall(llm_model, structured_output_model : BaseModel,
+def parameterModelCall(llm_model, structured_output_model : BaseModel, output_list_name : str, 
                    role: str,
                    parameter_rules : List[str] = [],
                    input_messages = [ HumanMessage("Start your workflow") ],
@@ -445,7 +456,7 @@ def parameterModelCall(llm_model, structured_output_model : BaseModel,
     - Use Python True/False for boolean fields
     - You cannot use any libraries within the code. 
     - Your output code must instantiate *all* required instances.
-    - The {output_type_name} structure instances must be stored to a list with name 'result'.
+    - The {output_type_name} structure instances must be stored to a list with name '{output_list_name}'.
     - You must use for loops to iterate over parameter values if there are more than 3 values.
     - Try to make the code as short as possible while still remaininng intelligible. For instance:
         - If you have a loop involving {output_type_name} that share multiple parameters, instantiate a base instance outside the loop with those static parameters set, and take copies within the loop to set the values that differ.
@@ -498,15 +509,15 @@ def parameterModelCall(llm_model, structured_output_model : BaseModel,
             print("ERRORS", errors)
             user_interactions.append(HumanMessage(f"Running your code produced error(s): {errors}"))      
             continue
-        if "result" not in aeval.symtable:
+        if output_list_name not in aeval.symtable:
             print("SYMTABLE DOESNT CONTAIN RESULT", aeval.symtable.keys())
-            user_interactions.append(HumanMessage(f"Your code does not create the 'result' list"))
+            user_interactions.append(HumanMessage(f"Your code does not create the '{output_list_name}' list"))
             continue 
 
         #Automatic validation
         vfail = False
         parsed_results = [] #not kept, just used for validation
-        for r in aeval.symtable["result"]:                                
+        for r in aeval.symtable[output_list_name]:                                
             try:
                 mval = structured_output_model.model_validate(r)
             except Exception as e:

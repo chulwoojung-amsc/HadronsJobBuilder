@@ -13,6 +13,7 @@ from femtomeas.agent_common.common import *
 from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 from femtomeas.agent_common.python_output_agent import parameterAgent
 from femtomeas.meas_config_agent.meas_agent_common import Gammas
+from femtomeas.meas_config_agent.source_config import momentumStr
 
 mesonSpecialKeywords = Literal["pion","kaon","pseudoscalar","vector","axial-vector"]
 
@@ -38,11 +39,64 @@ def validateProps(prop_names, state):
             return (False, f"-Propagator instance {p} does not exist")
     return (True,"")
 
+#TODO: cache and reuse these? Don't think there's much need but it makes neater XML
+class ContractionSinkPoint(BaseModel):
+    """A point sink with optional momentum (default zero-momentum)"""
+    type: Literal["contraction_sink_point"] = "contraction_sink_point"
+    momentum : Tuple[float,float,float,float] | None = Field(..., description="An optional four-momentum")
+
+    def setXML(self,obs_name,xml):
+        name = obs_name + "_sinkpoint"
+        snk = xml.addModule(name, "MSink::ScalarPoint")
+        HadronsXML.setValue(snk, "mom", momentumStr(self.momentum))
+        return name
+
+    def check(self, state):        
+        return (True, "")
+      
+class ContractionSinkNone(BaseModel):
+    """Use this sink type when using smeared propagators"""
+    type: Literal["contraction_sink_none"] = "contraction_sink_none"
+
+    def setXML(self,obs_name,xml):
+        return ""
+
+    def check(self, state):        
+        return (True, "")
 
 class Meson2ptInstance(BaseModel):
-    """An instance of a calculation of a meson two-point function with a specific propagator combination"""
+    """An instance of a calculation of a meson two-point function with a specific propagator and sink combination"""
+    sink : Union[ContractionSinkNone, ContractionSinkPoint] = Field(..., description="The sink smearing for contracting unsmeared propagators", discriminator='type')
     propagators : Tuple[str,str] = Field(..., description="The tags of the propagators used to compute the observable")
     name: str = Field(..., description="The name/tag of the observable instance")        
+
+    def setXML(self, gammas_snk_src, xml):
+        sink_nm = self.sink.setXML(self.name, xml)
+
+        #NB: gamma5-hermiticity used on q2
+        opt = xml.addModule(self.name, "MContraction::Meson")
+        HadronsXML.setValues(opt, [ ("q1", self.propagators[0]), ("q2", self.propagators[1]), ("gammas", gammas_snk_src), ("sink", sink_nm), ("output",f"{self.name}.out") ])
+
+    def check(self, state):
+        lprop_exists = state.isValidPropagator(self.propagators[0])
+        rprop_exists = state.isValidPropagator(self.propagators[1])
+        lsprop_exists = state.isValidSmearedPropagator(self.propagators[0])
+        rsprop_exists = state.isValidSmearedPropagator(self.propagators[1])
+
+        if not lprop_exists and not lsprop_exists:
+            return (False, f"Propagator {self.propagators[0]} does not exist")
+        if not rprop_exists and not rsprop_exists:
+            return (False, f"Propagator {self.propagators[1]} does not exist")
+        
+        if (lprop_exists and not rprop_exists) or (rprop_exists and not lprop_exists) or (lsprop_exists and not rsprop_exists) or (rsprop_exists and not lsprop_exists):
+            return (False, "Cannot mix smeared and unsmeared propagators in meson contractions")
+
+        if (lsprop_exists and not isinstance(self.sink, ContractionSinkNone) ):
+            return (False, "Sink argument must be ContractionSinkNone when using smeared propagators")
+        if (lprop_exists and isinstance(self.sink,ContractionSinkNone) ):
+            return (False, "Sink argument must be different from ContractionSinkNone when using unsmeared propagators")
+        
+        return (True, "")
 
 class Meson2ptConfig(BaseModel):
     """A meson two-point function or "correlator"."""    
@@ -59,9 +113,7 @@ class Meson2ptConfig(BaseModel):
                 gammas_snk_src = gammas_snk_src + f"({gsnk} {gsrc})"
 
         for instance in self.instances:                
-            #NB: gamma5-hermiticity used on q2
-            opt = xml.addModule(instance.name, "MContraction::Meson")
-            HadronsXML.setValues(opt, [ ("q1", instance.propagators[0]), ("q2", instance.propagators[1]), ("gammas", gammas_snk_src), ("sink", "point_sink_zerop"), ("output",f"{instance.name}.out") ])
+            instance.setXML(gammas_snk_src, xml)
        
     def check(self, state):
         result = True
@@ -72,15 +124,33 @@ class Meson2ptConfig(BaseModel):
             reason += "\nBoth source and sink must have at least one Gamma-matrix combination"
         
         for instance in self.instances:        
-            r = validateProps(instance.propagators,state)
-            if not r[0]:            
+            r = instance.check(state)
+            if not r[0]:
                 result = False
-                reason = reason + "\n" + r[1]
+                reason = reason + "\n" + r[1]            
+
         return (result, reason)
    
+
+class WritePropagators(BaseModel):
+    """List of propagators to write to disk and their filestems (filename without .${CFG}.bin extension)"""
+    type: Literal["write_propagators"] = "write_propagators"
+    write_props : List[ Tuple[str,str] ] = Field(..., description="List of propagator name, local filestem pairs")
+
+    def setXML(self, xml):
+        for p in self.write_props:
+            nm = p[0] + "_write"
+            opt = xml.addModule(nm, "MIO::SavePropagator")
+            HadronsXML.setValues(opt, [ ("name", p[0]), ("fileStem", p[1]) ])
+
+    def check(self, state):
+        props = [p[0] for p in self.write_props]
+        return validateProps(props)
+
+
 class ObservableConfig(BaseModel):
     """An instance of an observable."""
-    obs: Union[Meson2ptConfig] = Field(...,description="The observation instance and configuration.", discriminator='type')
+    obs: Union[Meson2ptConfig, WritePropagators] = Field(...,description="The observation instance and configuration.", discriminator='type')
 
     def setXML(self, xml):
         self.obs.setXML(xml)
@@ -119,8 +189,13 @@ def configureObservables(model, state, user_interactions: list[BaseMessage]) -> 
     """Meson2ptInstance.propagators:
   - Use the message history and the skills descriptions of the observables to identify the propagators required to compute this observable and note their 'name' fields. Use only the names of propagators, not of other types of instance (e.g. sources, solvers, actions)
   - Do not invent names for propagators, use only those assigned to existing propagators in your message history.
-  - You MUST ensure the order of the two propagators in the Tuple matches the role of the two quarks. For example, if the user says "prop_1" should be used as the first (or incoming) quark, ensure it is the first entry.""",
-                       
+  - You MUST ensure the order of the two propagators in the Tuple matches the role of the two quarks. For example, if the user says "prop_1" should be used as the first (or incoming) quark, ensure it is the first entry.
+  - You can use either two smeared propagators or two unsmeared propagators, but you cannot mix smeared and unsmeared propagators
+  """,
+
+    """Meson2ptInstance.sink:
+  - When using smeared propagators, you must use a ContractionSinkNone for this parameter
+  - When using regular/unsmeared propagators, you must choose the sink type according to the user's input. The most common sink type is ContractionSinkPoint (point sink); you may suggest this to the user.""",
                        
     """Meson2ptConfig.sink_gammas and Meson2ptConfig.source_gammas:
   - These are lists of Gamma-matrix combinations for the sink and source locations, respectively.
@@ -142,4 +217,4 @@ def configureObservables(model, state, user_interactions: list[BaseMessage]) -> 
     def instanceCheck(obs):
         return obs.check(state)
 
-    return parameterAgent(model, ObservableConfig, role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, input_messages=user_interactions, instance_validator=instanceCheck)
+    return parameterAgent(model, ObservableConfig, "observable_configs", role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, input_messages=user_interactions, instance_validator=instanceCheck)

@@ -174,4 +174,4 @@ def setupEigenSolvers(model, state, user_interactions: list[BaseMessage]) -> str
     def check(instance):
         return instance.check(state)
 
-    return parameterAgent(model, EigenSolverConfig, role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions, additional_user_query_rules=additional_user_query_rules, instance_validator=check)
+    return parameterAgent(model, EigenSolverConfig, "eigensolvers", role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions, additional_user_query_rules=additional_user_query_rules, instance_validator=check)

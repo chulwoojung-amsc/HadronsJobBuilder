@@ -9,6 +9,7 @@ from .source_config import identifySources
 from .eigenvectors import setupEigenSolvers
 from .solver_config import identifySolvers
 from .propagator_config import identifyPropagators
+from .smeared_prop_config import identifySmearedPropagators
 from .observable_config import configureObservables
 from femtomeas.meas_config_agent.gauge import identifyGaugeConfigs
 
@@ -95,6 +96,18 @@ def agent(query, model, ckpoint_file="state.json", reload_state=False)-> State :
         checkpointState(state,ckpoint_file)
 
     messages.append( HumanMessage("The Python code that specifies and generates the propagator instances is as follows:\n" + state.propagators, indent=2) )
+
+    if state.smeared_propagators == None:
+        Print("""
+---
+## SMEARED PROPAGATORS
+---
+        """) 
+        state.smeared_propagators = identifySmearedPropagators(model, state, messages.copy())
+        checkpointState(state,ckpoint_file)
+
+    messages.append( HumanMessage("The Python code that specifies and generates the smeared propagator instances is as follows:\n" + state.smeared_propagators, indent=2) )
+
 
     if state.observable_configs == None:
                 

@@ -16,6 +16,8 @@ from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_output_agent import parameterAgent
 from femtomeas.meas_config_agent.meas_agent_common import Gammas
 
+def momentumStr(mom):
+    return "0. 0. 0. 0." if mom == None else spaceSeparateSeq(mom)
 
 class PointSource(BaseModel):
     """A point or single-location source"""
@@ -40,18 +42,74 @@ class WallSource(BaseModel):
 
     def setXML(self,name,xml):
         opt = xml.addModule(name,"MSource::Wall")
-        HadronsXML.setValues(opt, [ ("tW",self.timeslice), ("mom", "0. 0. 0. 0." if self.momentum == None else spaceSeparateSeq(self.momentum) ) ])
+        HadronsXML.setValues(opt, [ ("tW",self.timeslice), ("mom", momentumStr(self.momentum)  ) ])
 
     def check(self, state, src_names):
         return (True, "")
-        
+
+class VolumeMomentumSource(BaseModel):
+    """A volume-momentum source aka plane-wave source   src_x = e^{sum_k 2pi i p_k x_k /L_k} """
+    type: Literal["volume_momentum"] = "volume_momentum"
+    momentum: Tuple[float,float,float,float] = Field(..., description="The four-momentum")
+
+    def setXML(self,name,xml):
+        opt = xml.addModule(name,"MSource::Momentum")
+        HadronsXML.setValue(opt, "mom", momentumStr(self.momentum))
+
+    def check(self, state, src_names):
+        return (True, "")
+
+
+class Z2BandSource(BaseModel):
+    """A wall or band source (distinguished by whether it exists on one or more timeslices) with Z2 random numbers"""
+    type: Literal["z2"] = "z2"
+    tA: NonNegativeInt = Field(..., description="Start timeslice of the band source")
+    tB: NonNegativeInt = Field(..., description="End timeslice of the band source")    
+
+    def setXML(self,name,xml):
+        opt = xml.addModule(name,"MSource::Z2")
+        HadronsXML.setValues(opt, [ ("tA",self.tA), ("tB", self.tB) ])
+
+    def check(self, state, src_names):
+        if(self.tA > self.tB):
+            return (False, "End timeslice is before start timeslice")
+        return (True, "")
+
+
+class GaussianSource(BaseModel):
+    """
+    A gaussian source centered at some position,      [ 1/(sqrt(2*pi)*width)^3 ] exp(-i sum_{i=0}^{3} (x_i - position_i)^2/(2 width^2)  + 2pi i sum_{i=0}^4 mom_i x_i/L_i )    for  tA <= x_3 <= tB
+    If the user wants a point source, use PointSource instead    
+    """
+    type: Literal["gauss"] = "gauss"
+    position: Tuple[NonNegativeInt,NonNegativeInt,NonNegativeInt] = Field(..., description="The spatial position of the center of the Gaussian")
+    momentum: Tuple[NonNegativeInt,NonNegativeInt,NonNegativeInt,NonNegativeInt] = Field(..., description="The integer four-momentum")
+    tA: NonNegativeInt = Field(..., description="Start timeslice of the source")
+    tB: NonNegativeInt = Field(..., description="End timeslice of the source")    
+    width: float = Field(..., description="The width of the Gaussian")
+
+    def setXML(self,name,xml):
+        opt = xml.addModule(name,"MSource::Gauss")
+        HadronsXML.setValues(opt, [ ("position", spaceSeparateSeq(self.position)), ("mom", momentumStr(self.momentum)), ("tA",self.tA), ("tB", self.tB), ("width", self.width) ])
+
+    def check(self, state, src_names):
+        if(self.tA > self.tB):
+            return (False, "End timeslice is before start timeslice")
+        return (True, "")
+ 
+
+
+
+
+
+
 class SeqGammaSource(BaseModel):
     """A sequential propagator source where a source is constructed from the slice of a propagator between two timeslices with a specific gamma matrix structure and momentum,
        src_x = q_x * theta(x_3 - tA) * theta(tB - x_3) * gamma * exp(i x.mom)
     """
     type: Literal["seq_gamma"] = "seq_gamma"
-    t_a : int = Field(..., description="Start timeslice of sequential source")
-    t_b : int = Field(..., description="End timeslice of sequential source")
+    t_a : NonNegativeInt = Field(..., description="Start timeslice of sequential source")
+    t_b : NonNegativeInt = Field(..., description="End timeslice of sequential source")
     gamma: Gammas = Field(...,description="Gamma-matrix structure of the sequential source")
     momentum: Optional[Tuple[float,float,float,float]] = Field(
         None, description="Optional four-momentum"
@@ -61,18 +119,31 @@ class SeqGammaSource(BaseModel):
     q_prop_info: str= Field(...,description="Other information associated with the input propagator provided by the user")
     
     def setXML(self,name,xml):
-        pass
+        opt = xml.addModule(name,"MSource::SeqGamma")
+        HadronsXML.setValues(opt, 
+                             [
+                                ("q", self.q),
+                                ("tA", self.t_a),
+                                ("tB", self.t_b),
+                                ("gamma", self.gamma),
+                                ("mom", momentumStr(self.momentum) )                                  
+                              ])
     
     def check(self, state, src_names):
         if self.q_source_name not in src_names:
             return (False, f"Source {self.q_source_name} for input propagator {self.q} does not exist in the list of sources")
         return (True,"")
         
+
+
     
+
+
+
 class SourceConfig(BaseModel):
     name : str = Field(..., description="The name/tag for the source")
-    source: Union[PointSource, WallSource,SeqGammaSource] = Field(
-        ..., description="Information about the source.", discriminator='type'  # Each item must have a 'type' field. Valid values are: 'point', 'wall'  
+    source: Union[PointSource, WallSource,SeqGammaSource,VolumeMomentumSource,Z2BandSource,GaussianSource] = Field(
+        ..., description="Information about the source.", discriminator='type'
     )
     user_info: str = Field(..., description="Additional information (if any) provided by the user on what observables/propagators this source will be used for")
     
@@ -86,12 +157,8 @@ def identifySources(model, state, user_interactions: list[BaseMessage]) -> str:
     role = """creating instances of SourceConfig for every propagator source required by the user.
 
     Previous agent interactions have identified a set of observables and their required number of propagators. Sources are inputs to constructing those propagators. A source instance has a source type (e.g. point, wall) along with a set of parameters that depend on the source type. Each propagator requires a source, but can share the same source instance.
-    """
 
-    parameter_rules = [
-        """sources:
-          
-  Perform the following workflow:
+    Perform the following workflow:
     1) Check the message history to see if the source types of the required propagators has been specified.
 
        If the source types have not yet been specified:
@@ -110,9 +177,15 @@ def identifySources(model, state, user_interactions: list[BaseMessage]) -> str:
   - Create a separate entry for each unique collection of source parameters, for example if the user specified propagators with point sources at [0,0,0,0] and [12,24,12,24], create two separate source instances with different source locations.
   - Create a separate entry for each source instance, even if the same source type appears multiple times with different parameters.
   - Your list must include every source instance explicitly mentioned, and only those. Do not invent instances. Do not combine instances unless the user explicitly describes them as the same.
-  - Only create separate entries for sources whose source parameters differ, even if those sources will be associated with different actions in their associated propagators. For instance, if there are two action instances, 'action_a' and 'action_b' which both need wall sources with t=0, create only one wall source instance.""",
+  - Only create separate entries for sources whose source parameters differ, even if those sources will be associated with different actions in their associated propagators. For instance, if there are two action instances, 'action_a' and 'action_b' which both need wall sources with t=0, create only one wall source instance.
 
+  Notes:
+  - Do not confuse sink smearing and sources. Sink smearing is performed on the solutions of inverting the Dirac matrix upon a source, and is entirely independent from the form of the source.
+  - Do not describe non-local sources as "smeared" sources.
+  - When the user asks for a point source, assume that they mean PointSource and NOT GaussianSource unless they specifically mention the gaussian source
+    """
 
+    parameter_rules = [
        """SourceConfig.name:
   - You must assign a unique tag/name to the instance via the SourceConfig.name field. Do not ask the user to specify a tag.
   - Never use the same tag for different instances.
@@ -174,4 +247,4 @@ def identifySources(model, state, user_interactions: list[BaseMessage]) -> str:
                 reason += f"\nsources[{i}] ({sources[i].name}): {p[1]}"
         return (val,reason)
 
-    return parameterAgent(model, SourceConfig, role, tools=[], input_messages=user_interactions, parameter_rules=parameter_rules, group_validator=checkAll )
+    return parameterAgent(model, SourceConfig, "sources", role, tools=[], input_messages=user_interactions, parameter_rules=parameter_rules, group_validator=checkAll )

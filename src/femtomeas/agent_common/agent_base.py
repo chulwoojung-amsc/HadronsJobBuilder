@@ -135,6 +135,7 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     - If the user has not responsed to your question, do not think ahead to the next question. Wait for the user to respond.
     
     - Never ask if the user wants to specify a parameter; assume that the user wants to specify all parameters
+    - If the user asks you to choose a value for a parameter, explain to them via the "answer_to_user" field that you cannot decide on parameter values, you can only make suggestions, then repeat the question in the "question_to_user" field.
     - Be brief and to the point with your question, and do not ask for more than one value in a single question.
     - If you ask a question where the user is asked to choose between a set of known options, first obtain the list of options (calling any appropriate tools) then list those options alongside the question in your response. If there are more than 6 choices, list only the first 6 and indicate that there are more options.
     - If the user responds to a query with an invalid response, your response should explain that the choice is invalid and ask the question again. Never ask a question about the next field without a valid response to the current field.
@@ -265,11 +266,8 @@ Current {output_type_name} params struct
                 if not isinstance(e, AttributeError):
                     raise Exception(f"Validation threw an error, {e}")
                 
-            #Human validation
-            output = f"Obtained:\n" + prettyPrintPydantic(obj)
-            AgentPrint(output)
-            
-            accepted = queryYesNo("Is this correct?")
+            #Human validation            
+            accepted = queryYesNo("Is the following correct?", "\n" + prettyPrintPydantic(obj))
             
             if(accepted == False):
                 reason = AgentInput("Explain what is wrong: ")

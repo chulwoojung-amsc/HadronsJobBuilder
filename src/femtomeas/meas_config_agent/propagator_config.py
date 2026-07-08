@@ -25,7 +25,7 @@ class PropagatorConfig(BaseModel):
 
 def identifyPropagators(model, state, user_interactions: list[BaseMessage]) -> str:
     role = """
-You are responsible for identifying the lattice QCD propagators for the calculation alongside their associated solver and source.
+You are responsible for identifying the (non-sink-smeared) lattice QCD propagators for the calculation and their associated solver and source. (Sink-smeared propagators are built from unsmeared propagators and will be created later.)
 
 A propagator instance has a 'source' and 'solver' field that must be set, respectively, to the name of one of the source and solver instances identified previously.
 
@@ -43,6 +43,7 @@ If more than one observable requires a propagator with the same source/solver co
 Propagator instance rules:    
 - Your list must include every propagator instance required for the observables, and only those. Do not invent instances.
 - You must reuse propagator instances that share the same source and solver
+- Do not create separate non-sink-smeared propagators for different sink-smeared propagators. A single non-sink-smeared propagator can be sink smeared in arbitrary ways.
 """    
 
     def instanceCheck(prop):
@@ -63,4 +64,4 @@ Propagator instance rules:
             names.append(r.name)
         return (valid, invalid_why)
 
-    return parameterModelCall(model, PropagatorConfig, role, input_messages = user_interactions, instance_validator=instanceCheck, group_validator=groupCheck)
+    return parameterModelCall(model, PropagatorConfig, "propagators", role, input_messages = user_interactions, instance_validator=instanceCheck, group_validator=groupCheck)
