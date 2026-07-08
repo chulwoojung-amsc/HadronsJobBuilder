@@ -18,6 +18,9 @@ elif globals.api_impl == "SF":
 elif globals.api_impl == "SPOOF":
     print("Using Spoof API")
     from .spoof_api import setupWorkflowAgent, remoteMkdir, uploadBytes, executeBatchJobCompat, getJobState, globusTransferStatus, globusCopyToMachine, globusCopyFromMachine, queryMachineStatus, getUserAccountProjects, getKnownMachines, getMachineQueues, remoteRun, downloadFile, listSpecialGlobusEndpoints
+elif globals.api_impl == "LOCAL":
+    print("Using Local API")
+    from .local_api import setupWorkflowAgent, remoteMkdir, uploadBytes, executeBatchJobCompat, getJobState, cancelJob, globusTransferStatus, globusCopyToMachine, globusCopyFromMachine, queryMachineStatus, getUserAccountProjects, getKnownMachines, getMachineQueues, remoteRun, downloadFile, listSpecialGlobusEndpoints
 else:
     raise Exception("Unknown API implementation")
 

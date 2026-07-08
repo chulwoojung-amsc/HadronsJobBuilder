@@ -1,0 +1,18 @@
+{
+    "workflow": {
+        "sfapi_key_path": "",
+        "iriapi_key_path": "",
+        "sandbox_directories": {
+            "Local": "/tmp/hadrons_jobs"
+        }
+    },
+    "hadrons": {
+        "Local": {
+            "bin": "/home/chulwoo/Claude/install/Hadrons/bin",
+            "env": ""
+        }
+    },
+    "agent": {
+        "i2api_key_path": "/tmp/dummy_i2api_key.json"
+    }
+}

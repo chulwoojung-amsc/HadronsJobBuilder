@@ -141,7 +141,14 @@ def submitHadronsJob(machine: str,
     mpi_str = sizesToGridArgList(mpi)
 
     ###################################
-    if machine == "Perlmutter":
+    if machine == "Local":
+        nodes = 1
+        launcher = f"mpirun -np {ranks} " if ranks > 1 else ""
+        script=f"""#!/bin/bash
+{ hadrons_info[machine]["env"] }
+{launcher}{ hadrons_info[machine]["bin"] }/HadronsXmlRun {job_run_dir}/run.xml --mpi {mpi_str} --grid {grid_str} --log Iterative,Message,Error,Warning,Performance > {job_run_dir}/run.log 2>&1
+"""
+    elif machine == "Perlmutter":
         if ranks < 4:
             bind="" #Entire node must be allocated for verbose,map_ldom
         else:
@@ -188,6 +195,8 @@ rmdir ${{SCRATCH_DIR}}
 now=$(date)
 echo "Hadrons job completed at ${{now}}"
 """
+    else:
+        raise Exception(f"No batch script template for machine {machine}")
     #######################################
         
     remote_script_path = f"{job_run_dir}/batch_script.sh"

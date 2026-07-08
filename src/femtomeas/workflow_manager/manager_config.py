@@ -4,7 +4,7 @@ from .api_general import setupWorkflowAgent
 from .hadrons import setHadronsInfo
 from . import globals
 
-if globals.api_impl in ("SPOOF", "IRI_SF_HYBRID", "SF"):
+if globals.api_impl in ("SPOOF", "LOCAL", "IRI_SF_HYBRID", "SF"):
     class WorkflowConfig(BaseModel):
         sfapi_key_path: str = Field(..., description="The path to the Superfacility API key")
         iriapi_key_path: str = Field(..., description="The path to the IRI API key (will be created if doesn't yet exist)")
