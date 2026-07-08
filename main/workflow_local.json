@@ -13,6 +13,6 @@
         }
     },
     "agent": {
-        "i2api_key_path": "/tmp/dummy_i2api_key.json"
+        "i2api_key_path" : "/home/chulwoo/Claude/API_KEY-AmSC.json"
     }
 }
