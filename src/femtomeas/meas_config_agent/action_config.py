@@ -72,7 +72,7 @@ def identifyActions(model, user_interactions: list[BaseMessage]) -> str:
 
   The rules for identifying the required action instances are:
   - Create a separate entry for each unique collection of parameters, for example, if the user specifies DWF propagators with Ls=12, M5=1.8 and masses of 0.03 and 0.05, create two separate action instances with different mass values.    
-  - Create a separate entry for each action instance, even if the action appears multiple times with different parameters.
+  - If an action with a particular set of parameters is used in multiple places, do not create multiple action instances. Instead specify those usages in the user_info field.
   - Your list must include every action instance explicitly mentioned, and only those. Do not invent instances. do not combine instances unless the user explicitly describes them as the same.""",
         
         "ActionConfig.action: Insert the action type (e.g. DWF, WilsonClover) associated with the instance",
@@ -86,6 +86,5 @@ def identifyActions(model, user_interactions: list[BaseMessage]) -> str:
   - Summarize any information relevant to what observables/propagators this action will be used for provided by the user. Do not ask the user to provide this summary.
   - It is important that any positional information about the propagator be included, for example whether it is the first or second propagator of a two-point function, or if it is a 'spectator' quark in a baryon.
   - If the user does not specify any details, use an empty string. For example, if the user specifies that this action will be used for light quark propagators, enter "use for all light quark propagators" in user_info.""" ]
-
 
     return parameterAgent(model, ActionConfig, "actions", role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions)

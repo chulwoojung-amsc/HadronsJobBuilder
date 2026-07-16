@@ -79,7 +79,7 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
                    input_messages = [ HumanMessage("Start your workflow") ],
                    additional_user_query_rules = [],
                    additional_workflow_termination_rules: str | None = None,
-                   output_check_kwargs = {}
+                   validator : Callable | None = None                   
                    ):
 
     agent_state.reset()
@@ -256,15 +256,12 @@ Current {output_type_name} params struct
             obj = structured_output_model.model_validate_json(resp_struct.params_struct)            
             
             #Automatic validation
-            try:            
-                valid = obj.check(**output_check_kwargs)
+            if validator is not None:                                                           
+                valid = validator(obj)
                 if not valid[0]:
                     print("VALIDATION FAIL",valid)
                     user_interactions.append(HumanMessage(f"Your previous response failed validation due to: {valid[1]}"))
                     continue
-            except Exception as e:
-                if not isinstance(e, AttributeError):
-                    raise Exception(f"Validation threw an error, {e}")
                 
             #Human validation            
             accepted = queryYesNo("Is the following correct?", "\n" + prettyPrintPydantic(obj))
