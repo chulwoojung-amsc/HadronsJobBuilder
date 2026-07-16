@@ -9,9 +9,14 @@ if globals.api_impl in ("SPOOF", "LOCAL", "IRI_SF_HYBRID", "SF"):
         sfapi_key_path: str = Field(..., description="The path to the Superfacility API key")
         iriapi_key_path: str = Field(..., description="The path to the IRI API key (will be created if doesn't yet exist)")
         sandbox_directories: dict[str, str] = Field(..., description="A map of machine names to base sandbox directories")
+        local_globus_endpoint: str = Field("", description="(LOCAL api only) UUID of a Globus collection on this machine (e.g. Globus Connect Personal); enables real Globus transfers")
+        globus_token_path: str = Field("", description="(LOCAL api only) Path to store Globus transfer tokens; defaults to ~/.femtomeas/globus_transfer_tokens.json")
 
     def setupManager(config : dict):
         setupWorkflowAgent(config.workflow.sfapi_key_path, config.workflow.iriapi_key_path, config.workflow.sandbox_directories)
+        if globals.api_impl == "LOCAL" and config.workflow.local_globus_endpoint:
+            from .local_api import setupGlobus
+            setupGlobus(config.workflow.local_globus_endpoint, config.workflow.globus_token_path)
         setHadronsInfo(config.model_dump()["hadrons"])
         
 elif globals.api_impl == "IRI":

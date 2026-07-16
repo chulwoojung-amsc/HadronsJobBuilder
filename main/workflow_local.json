@@ -3,8 +3,10 @@
         "sfapi_key_path": "",
         "iriapi_key_path": "",
         "sandbox_directories": {
-            "Local": "/tmp/hadrons_jobs"
-        }
+            "Local": "/home/chulwoo/Claude/hadrons_jobs"
+        },
+        "local_globus_endpoint": "093adabc-80af-11f1-96eb-02ce27bde401",
+        "globus_token_path": "/home/chulwoo/.femtomeas/globus_transfer_tokens.json"
     },
     "hadrons": {
         "Local": {

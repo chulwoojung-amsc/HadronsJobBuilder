@@ -23,6 +23,12 @@ from .utils import checkSafePath
 
 
 def listSpecialGlobusEndpoints():
+    #"local" always means "the file is already on this machine, just copy it".
+    #When real Globus transfers are enabled the named remote collections known
+    #to the IRI backend (dtn, perlmutter, ...) are usable as sources too.
+    if _globus["endpoint"]:
+        from . import iri_api
+        return ["local"] + list(iri_api.special_globus_endpoints.keys())
     return ["local"]
 
 def setupWorkflowAgent(sfapi_key_path: str, iriapi_key_path : str, work_dir : dict):
@@ -120,19 +126,157 @@ def _recordTransfer(machine: str, status: str) -> str:
     _saveRegistry(machine, reg)
     return key
 
+#################### real Globus transfers (optional) ####################
+#
+# If setupGlobus() has been called with the UUID of a Globus collection on
+# this machine (e.g. Globus Connect Personal), transfers to/from a non-null
+# remote endpoint are performed as real Globus transfers; otherwise (or for
+# endpoint "local"/None) they fall back to local filesystem copies as before.
+
+TRANSFER_RESOURCE_SERVER = "transfer.api.globus.org"
+_LOGIN_ATTEMPTS = 3
+
+_globus = {"endpoint": "", "token_path": "", "client": None}
+
+def setupGlobus(local_endpoint: str, token_path: str):
+    """Enable real Globus transfers landing on this machine's collection."""
+    _globus["endpoint"] = local_endpoint
+    _globus["token_path"] = token_path or str(Path.home() / ".femtomeas" / "globus_transfer_tokens.json")
+    _globus["client"] = None
+    wfapiLog(f"LOCAL api Globus transfers enabled, local endpoint {local_endpoint}, tokens at {_globus['token_path']}")
+
+def _globusLoginScope(iri_api, extra_scopes=()):
+    import globus_sdk
+    from globus_sdk.scopes import TransferScopes
+    data_access = [globus_sdk.scopes.GCSCollectionScopes(mc).data_access
+                   for mc in iri_api.special_globus_endpoints.values()]
+    scope = TransferScopes.all.with_dependencies(data_access)
+    return [scope, *extra_scopes]
+
+def _globusInteractiveLogin(iri_api, client, extra_scopes=()):
+    from .logging import wfapiUserQuery
+    client.oauth2_start_flow(
+        requested_scopes=_globusLoginScope(iri_api, extra_scopes),
+        refresh_tokens=True,
+    )
+    query = f"""Open this URL, login, and consent:
+    { client.oauth2_get_authorize_url(query_params={"prompt": "login"}) }
+
+    Enter authorization code"""
+    #A mistyped code is worth retrying; no terminal to read from is not.
+    for attempt in range(_LOGIN_ATTEMPTS):
+        try:
+            code = wfapiUserQuery("Globus Transfer login", query).strip()
+        except EOFError:
+            raise Exception("Globus login requires an interactive terminal to enter the "
+                            "authorization code; run 'python3 main/globus_login.py <config>' "
+                            "from a terminal once to cache tokens, then re-run this.")
+        try:
+            token_response = client.oauth2_exchange_code_for_tokens(code)
+            break
+        except Exception as e:
+            wfapiLog(f"Globus login attempt {attempt+1}/{_LOGIN_ATTEMPTS} failed: {e}")
+    else:
+        raise Exception(f"Globus login failed after {_LOGIN_ATTEMPTS} attempts")
+    return token_response.by_resource_server[TRANSFER_RESOURCE_SERVER]
+
+def _transferClient(force_login_scopes=None):
+    """Build (or reuse) a TransferClient; force_login_scopes triggers a fresh
+    interactive login requesting the given additional scopes (consent flow)."""
+    import globus_sdk
+    from . import iri_api
+    if _globus["client"] is not None and force_login_scopes is None:
+        return _globus["client"]
+
+    client = globus_sdk.NativeAppAuthClient(iri_api.GLOBUS_CLIENT_ID)
+    token_path = Path(_globus["token_path"])
+    auth_data = None
+    if force_login_scopes is None:
+        stored = iri_api.load_tokens(token_path)
+        if stored and stored.get("refresh_token"):
+            auth_data = iri_api.refresh_tokens(client, stored["refresh_token"], TRANSFER_RESOURCE_SERVER)
+    if auth_data is None:
+        auth_data = _globusInteractiveLogin(iri_api, client, force_login_scopes or ())
+    iri_api.save_tokens(token_path, auth_data)
+
+    def _on_refresh(token_response):
+        iri_api.save_tokens(token_path, token_response.by_resource_server[TRANSFER_RESOURCE_SERVER])
+
+    authorizer = globus_sdk.RefreshTokenAuthorizer(
+        auth_data["refresh_token"], client,
+        access_token=auth_data.get("access_token"),
+        expires_at=auth_data.get("expires_at_seconds"),
+        on_refresh=_on_refresh)
+    _globus["client"] = globus_sdk.TransferClient(authorizer=authorizer)
+    return _globus["client"]
+
+def _resolveEndpoint(endpoint: str) -> str:
+    from . import iri_api
+    return iri_api.replaceSpecialGlobusEndpoint(endpoint)
+
+def _globusSubmit(source_endpoint: str, source_path: str,
+                  dest_endpoint: str, dest_path: str) -> str:
+    """Submit a Globus transfer; returns the task ID. Retries once through an
+    interactive consent login if the collections need extra data_access scopes."""
+    import globus_sdk
+    for attempt in range(2):
+        tc = _transferClient()
+        try:
+            try:
+                is_dir = tc.operation_stat(source_endpoint, source_path)["type"] == "dir"
+            except globus_sdk.TransferAPIError as e:
+                if e.info.consent_required:
+                    raise
+                is_dir = False  # stat can fail on some collections; assume file
+            td = globus_sdk.TransferData(source_endpoint=source_endpoint,
+                                         destination_endpoint=dest_endpoint,
+                                         notify_on_succeeded=False, notify_on_failed=False)
+            if is_dir:
+                td.add_item(source_path, dest_path, recursive=True)
+            else:
+                td.add_item(source_path, os.path.join(dest_path, os.path.basename(source_path)))
+            task_id = tc.submit_transfer(td)["task_id"]
+            wfapiLog(f"Globus transfer {task_id} submitted: {source_endpoint}:{source_path} -> {dest_endpoint}:{dest_path}")
+            return task_id
+        except globus_sdk.TransferAPIError as e:
+            if attempt == 0 and e.info.consent_required:
+                wfapiLog(f"Globus consent required for scopes {e.info.consent_required.required_scopes}; re-authenticating")
+                _transferClient(force_login_scopes=e.info.consent_required.required_scopes)
+                continue
+            raise
+
+def _globusEnabledFor(endpoint: str) -> bool:
+    return bool(_globus["endpoint"]) and endpoint not in (None, "", "local")
+
 def globusCopyFromMachine(dest_endpoint: str, dest_path : str,
                           machine: str, source_path : str):
+    if _globusEnabledFor(dest_endpoint):
+        wfapiLog(f"Globus copy from {machine}:{source_path} to {dest_endpoint}:{dest_path}")
+        return _globusSubmit(_globus["endpoint"], source_path,
+                             _resolveEndpoint(dest_endpoint), dest_path)
     wfapiLog(f"Local copy (endpoint {dest_endpoint} ignored) from {machine}:{source_path} to {dest_path}")
     return _recordTransfer(machine, _localCopy(source_path, dest_path))
 
 def globusCopyToMachine(machine: str, dest_path : str,
-                        source_endpoint: str, source_path : str):
+                        source_endpoint: str, source_path : str,
+                        allow_unsafe = False):
+    if _globusEnabledFor(source_endpoint):
+        if not allow_unsafe and not checkSafePath(machine, dest_path):
+            raise Exception(f"Attempting to copy data to a location outside of the sandbox: {dest_path}")
+        wfapiLog(f"Globus copy from {source_endpoint}:{source_path} to {machine}:{dest_path}")
+        return _globusSubmit(_resolveEndpoint(source_endpoint), source_path,
+                             _globus["endpoint"], dest_path)
     wfapiLog(f"Local copy (endpoint {source_endpoint} ignored) from {source_path} to {machine}:{dest_path}")
     return _recordTransfer(machine, _localCopy(source_path, dest_path))
 
 def globusTransferStatus(machine, transfer_id):
     reg = _loadRegistry(machine)
-    return reg.get("transfers", {}).get(transfer_id, "FAILED")
+    if transfer_id in reg.get("transfers", {}):
+        return reg["transfers"][transfer_id]
+    # not a local-copy record: treat as a real Globus task ID
+    if _globus["endpoint"]:
+        return _transferClient().get_task(transfer_id)["status"]
+    return "FAILED"
 
 
 #################### machine information ####################
