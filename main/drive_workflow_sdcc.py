@@ -8,8 +8,12 @@ text immediately before " : " is the question itself).
 import sys
 import pexpect
 
+#Checkpoint is the one thing that varies run to run (which configurations to
+#measure); everything else about this job is fixed.
+CKPOINT = sys.argv[1] if len(sys.argv) > 1 else "ckpoint_state_16c_sdcc.json"
+
 CMD = ("/home/chulwoo/Claude/.venv/bin/python3 -u main/workflow.py "
-       "main/workflow_local.json --reload-checkpoint ckpoint_state_16c_sdcc.json "
+       f"main/workflow_local.json --reload-checkpoint {CKPOINT} "
        "--execute-workflow")
 
 FULL_INFO = ("Run on machine Local with account chulwoo on queue local. "

@@ -19,14 +19,24 @@ import sys
 from femtomeas.workflow_manager.manager_config import readManagerConfigFile
 from femtomeas.workflow_manager import local_api
 
-#Collections worth naming, so callers don't have to paste UUIDs.
+#Collections worth naming, so callers don't have to paste UUIDs. Verified by
+#endpoint_search; `dtn` and `perlmutter` are omitted because iri_api already
+#requests their data_access consent on every login.
 KNOWN_COLLECTIONS = {
-    "sdcc": "12782fb1-a599-4f18-b0fb-2e849681e214",
+    "sdcc":       "12782fb1-a599-4f18-b0fb-2e849681e214",  # SDCC (BNL)
+    "alcf-eagle": "05d2c76a-e867-4f67-aa57-76edeb0beda0",  # alcf#dtn_eagle
+    "olcf":       "36d521b3-c182-4071-b7d5-91db5d380d42",  # OLCF DTN (Globus 5)
+    "jlab":       "b0fca1ad-f485-4a00-8fcd-bca0b93a2a1c",  # jlab#gw1
 }
 
 def main():
     cfg_file = sys.argv[1] if len(sys.argv) > 1 else "main/workflow_local.json"
-    extra = [KNOWN_COLLECTIONS.get(a.lower(), a) for a in sys.argv[2:]]
+    args = sys.argv[2:]
+    #Consents accumulate on the account, so granting every collection you might
+    #ever use in one visit means the browser is never needed again.
+    if "--all" in args:
+        args = [a for a in args if a != "--all"] + list(KNOWN_COLLECTIONS)
+    extra = list(dict.fromkeys(KNOWN_COLLECTIONS.get(a.lower(), a) for a in args))
     config = readManagerConfigFile(cfg_file)
 
     endpoint = config.workflow.local_globus_endpoint

@@ -2,9 +2,45 @@
 
 Correlator spectrum fitting extracted from
 `Jupyter/fitting/omega/Spectrum-exp-claude.ipynb` (verified to reproduce the
-notebook's saved 96I results bitwise). Plan: `~/Claude/SpectrumFit_workflow_plan.md`.
-The conversational CLI (`fit_workflow.py`) is Step 2 and not built yet; today
-the package is used from a script or notebook.
+notebook's saved 96I results bitwise). Plans:
+`~/Claude/SpectrumFit_workflow_plan.md` (CLI) and
+`~/Claude/SpectrumFit_dualformat_plan.md` (dual-format input).
+
+Two input formats are supported (`DatasetConfig.format`, default `auto`):
+`flat_text` (96I `.dat`) and `hadrons_xml` (`MContraction::Meson` output, one
+`<base>.out.<traj>.xml` per trajectory, auto-discovered under `data_path`).
+
+The CLI `main/fit_workflow.py` has both a batch path and a staged conversational
+agent (`spectrumfit/fit_agent.py`).
+
+## CLI (batch)
+
+```bash
+cd ~/Claude/HadronsJobBuilder_kelly && source setup.sh
+python3 main/fit_workflow.py main/fit_workflow_config.json \
+        --reload-checkpoint main/fit_pion_16c_sdcc.json --skip-agent --execute-fit
+```
+
+The positional arg is the *manager* config (paths / LLM / `output_dir`). In batch
+mode (`--skip-agent`) the `--reload-checkpoint` file is a serialized `FitConfig`
+(the fit spec). Add `--write-config <f>` to assemble and save without running.
+`main/fit_pion_16c_sdcc.json` is a worked example over the six-config SDCC pion
+run (`hadrons_xml`).
+
+## CLI (conversational)
+
+```bash
+python3 main/fit_workflow.py main/fit_workflow_config.json --execute-fit
+```
+
+A staged conversation fills one `FitConfig` sub-model per stage - `## DATASET`,
+`## FIT MODEL`, `## COVARIANCE & RESAMPLING`, `## RUN & OUTPUT` - checkpointing to
+`fit_ckpoint_state.json` after each (resume with `--reload-checkpoint`; here the
+file is a `FitState`, not a `FitConfig`). The dataset stage has a format-aware
+`peekDataset` tool that reports `Nsample/Nt/Nop`, and for XML the discovered base
+name and gamma channels, so the agent checks answers against the real files. Needs
+`i2api_key_path` in the manager config; a fail-fast probe reports an unreachable
+endpoint immediately.
 
 ## 1. Environment
 

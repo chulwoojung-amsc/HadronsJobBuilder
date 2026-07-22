@@ -1,11 +1,29 @@
 from typing import List, Literal, Optional, Tuple
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
-class DatasetConfig(BaseModel):
+class _AgentFriendly(BaseModel):
+    """Base for config models filled by the conversational agent. The agent marks
+    fields it has not been given a value for with the literal string "<UNKNOWN>"
+    (an agent_common convention); drop those so the field default applies. A
+    required field left "<UNKNOWN>" still errors correctly, since dropping the key
+    leaves it missing."""
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_unknowns(cls, data):
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if v != "<UNKNOWN>"}
+        return data
+
+
+class DatasetConfig(_AgentFriendly):
     """Where the correlator data lives and how to interpret it."""
-    data_path: str = Field(..., description="Directory containing the data file")
-    name: str = Field(..., description="Data file name. Flat text, (Nsample*Nbin*Nt rows) x (Nop columns)")
+    data_path: str = Field(..., description="Directory containing the data file(s)")
+    format: Literal["flat_text", "hadrons_xml", "auto"] = Field(
+        "auto", description="Input format: flat_text (96I .dat), hadrons_xml "
+        "(MContraction::Meson output), or auto-detect")
+    name: str = Field("", description="Flat text: data file name, (Nsample*Nbin*Nt rows) x (Nop cols). "
+                      "Hadrons XML: base observable name, or '' to auto-discover a single one under data_path")
     Nt: int = Field(..., description="Temporal extent of the lattice")
     Nbin: int = Field(1, description="Number of consecutive measurements averaged into one sample (binning)")
     i_fit: List[int] = Field(..., description="Operator (column) indices included in the fit")
@@ -16,14 +34,14 @@ class DatasetConfig(BaseModel):
     tmax_overrides: dict[int, int] = Field(default_factory=dict, description="Per-operator tmax, keyed by operator index")
 
 
-class PreprocessConfig(BaseModel):
+class PreprocessConfig(_AgentFriendly):
     """Optional GEVP preprocessing (3x3 smeared matrix from ops 0-8)."""
     use_gevp: bool = Field(False, description="Replace raw ops with GEVP principal correlators")
     gevp_t0: int = Field(4, description="GEVP reference timeslice t0")
     gevp_neig: int = Field(3, description="Number of principal correlators to keep")
 
 
-class ModelConfig(BaseModel):
+class ModelConfig(_AgentFriendly):
     """Fit model: sum of exponentials plus optional alternating-sign states."""
     Nmass: int = Field(2, description="Number of normal exponential states")
     NmassAlt: int = Field(1, description="Number of alternating-sign exponential states")
@@ -41,7 +59,7 @@ class ModelConfig(BaseModel):
     n_late: int = Field(10, description="1-exp seed fit window: t in [tmax-n_late, tmax]")
 
 
-class StatConfig(BaseModel):
+class StatConfig(_AgentFriendly):
     """Covariance construction and resampling."""
     cov_on: Literal["meff", "corr"] = Field("corr", description="Fit data vector: log-ratio ('meff') or raw correlator ('corr')")
     inner_resample: Literal["jackknife", "bootstrap"] = Field("jackknife", description="Covariance estimation method")
@@ -55,7 +73,7 @@ class StatConfig(BaseModel):
     rng_seed: int = Field(42, description="Base RNG seed")
 
 
-class RunConfig(BaseModel):
+class RunConfig(_AgentFriendly):
     """Optimizer, refinement, tuning and output options."""
     optimizer: Literal["scipy", "custom"] = Field("scipy", description="BFGS implementation")
     use_de_refinement: bool = Field(True, description="Refine the multi-start result with differential evolution on profiled chi^2")
@@ -88,6 +106,11 @@ class FitConfig(BaseModel):
                 + 'LW' + str(self.stats.LW))
 
     def resolved_plot_dir(self) -> str:
-        if self.run.plot_dir is not None:
-            return self.run.plot_dir
-        return self.dataset.data_path + 'Nbin' + str(self.dataset.Nbin) + '_spec/'
+        d = self.run.plot_dir
+        if d is None:
+            d = self.dataset.data_path + 'Nbin' + str(self.dataset.Nbin) + '_spec/'
+        #Output paths are built as `dir + name + suffix`, so the directory part
+        #must end in a separator or files spill out as siblings of the dir.
+        if not d.endswith('/'):
+            d += '/'
+        return d

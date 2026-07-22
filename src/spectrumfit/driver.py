@@ -76,7 +76,7 @@ def runFit(config: FitConfig) -> FitResult:
     output_files = []
     plot_dir = config.resolved_plot_dir()
     suffix   = config.resolved_suffix()
-    name     = config.dataset.name
+    name     = ctx.out_label
     os.makedirs(plot_dir, exist_ok=True)
 
     fits_path, masses_path = save_results(ctx, fit_all, chi2_full, res,

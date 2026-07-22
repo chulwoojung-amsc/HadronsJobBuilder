@@ -159,8 +159,11 @@ def _globusInteractiveLogin(iri_api, client, extra_scopes=()):
         requested_scopes=_globusLoginScope(iri_api, extra_scopes),
         refresh_tokens=True,
     )
+    #No "prompt": "login" - forcing re-authentication makes every added consent a
+    #full password entry even when the browser already has a live Globus session.
+    #Consents still have to be approved; they just are not gated on logging in again.
     query = f"""Open this URL, login, and consent:
-    { client.oauth2_get_authorize_url(query_params={"prompt": "login"}) }
+    { client.oauth2_get_authorize_url() }
 
     Enter authorization code"""
     #A mistyped code is worth retrying; no terminal to read from is not.

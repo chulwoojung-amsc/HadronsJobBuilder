@@ -1,7 +1,7 @@
 import numpy as np
 
 from .config import FitConfig
-from .data import load_correlators
+from .data import load_correlators, load_hadrons_xml, resolve_format
 from .gevp import apply_gevp
 from .stats import build_cov
 from .models import build_model
@@ -19,12 +19,25 @@ class FitContext:
         ds, mc, st = config.dataset, config.model, config.stats
 
         # --- data ---
-        self.C_data = load_correlators(ds.data_path, ds.name, ds.Nt, ds.Nbin)
+        fmt = resolve_format(ds.format, ds.data_path, ds.name)
+        xml_channels = None
+        if fmt == 'hadrons_xml':
+            self.C_data, xml_channels, xml_base = load_hadrons_xml(ds.data_path, ds.name, ds.Nt, ds.Nbin)
+            #ds.name is '' for auto-discovery; label outputs with the resolved base.
+            self.out_label = ds.name or xml_base
+        else:
+            self.C_data = load_correlators(ds.data_path, ds.name, ds.Nt, ds.Nbin)
+            self.out_label = ds.name
         self.Nsample, self.Nt, self.Nop = self.C_data.shape
         print(f'Nsample={self.Nsample}, Nt={self.Nt}, Nop={self.Nop}')
 
         self.i_fit = list(ds.i_fit)
-        self.op_names = list(ds.op_names) if ds.op_names else [f'op {i}' for i in range(self.Nop)]
+        if ds.op_names:
+            self.op_names = list(ds.op_names)
+        elif xml_channels:
+            self.op_names = [f'{snk}-{src}' for snk, src in xml_channels]
+        else:
+            self.op_names = [f'op {i}' for i in range(self.Nop)]
         self.tmin = {op: ds.tmin_default for op in range(self.Nop)}
         self.tmax = {op: ds.tmax_default for op in range(self.Nop)}
         self.tmin.update(ds.tmin_overrides)
