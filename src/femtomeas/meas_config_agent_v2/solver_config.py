@@ -111,7 +111,18 @@ For this observable you must use the action instances described by the following
     
     print("INSTRUCTIONS\n", instructions)
 
+    ##############################################
+    #Keep an expanded copy of the used-actions list
+    act, _ = executeCodeAndParse(state.observable_actions[observable_tag], InstanceInfo, f"{observable_tag}_actions") 
+    used_actions = [ a.instance_tag for a in act ]
+
     ##############################
+    #Define the check for entries in the used-instance list that verifies the corresponding actions are still in the used-actions list
+    def validateUsedInstance(m : SolverConfig):
+        return m.action in used_actions
+
+    ##############################
+    #Define the validator for the group of solver instances
 
     def checkAll(solvers):
         for i in range(len(solvers)):
@@ -119,21 +130,19 @@ For this observable you must use the action instances described by the following
                 if solvers[i].action == solvers[j].action and solvers[i].solver_args == solvers[j].solver_args:
                     return (False, f"Action instances {solvers[i].name} and {solvers[j].name} have the same parameters. Solver instances must be unique.")                    
 
-        #Check it only used actions previously described as being associated with this observable
-        act, _ = executeCodeAndParse(state.observable_actions[observable_tag], InstanceInfo, f"{observable_tag}_actions") 
-        used_actions = [ a.instance_tag for a in act ]
-
+        #Check it only used actions previously described as being associated with this observable (note, this validator is only applied to *new* instances created by the agent)
         for s in solvers:
             if s.action not in used_actions:
                 return (False, f"Action {s.action} is not within the list of actions used by this observable")
         return (True, "")
+    ###################################
 
     input_obs_solver_code = None
     if state.observable_solvers is not None and observable_tag in state.observable_solvers:
         input_obs_solver_code = state.observable_solvers[observable_tag]
 
     updated_solver_code, obs_solver_code, invalidate_later_workflow_stages = parameterAgent(model, SolverConfig, "solvers", state.solvers, f"{observable_tag}_solvers", input_obs_solver_code, role, tools=[], \
-                                                          input_messages=[ HumanMessage(instructions) ], parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=checkAll, additional_user_query_rules=additional_user_query_rules )
+                                                          input_messages=[ HumanMessage(instructions) ], parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=checkAll, additional_user_query_rules=additional_user_query_rules, used_instance_list_checker=validateUsedInstance )
     state.solvers = updated_solver_code
 
     if state.observable_solvers is None:

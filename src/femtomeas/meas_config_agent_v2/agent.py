@@ -13,8 +13,9 @@ from .solver_config import identifySolvers
 from .propagator_config import identifyPropagators
 from .smeared_prop_config import identifySmearedPropagators
 from .observable_config import configureObservables
+from .observable_config_models import ObservableConfig
 from femtomeas.meas_config_agent.gauge import identifyGaugeConfigs
-
+from femtomeas.agent_common.agent_base import parameterAgent, parameterModelCall
 
 from typing import Tuple
 
@@ -40,174 +41,243 @@ from langgraph.runtime import Runtime
 import re
 import traceback
 
-from typing import Callable
-from langchain.agents.middleware import (
-    wrap_model_call,
-    ModelRequest,
-    ModelResponse,
-    AgentState,
-    ExtendedModelResponse
-)
-from langgraph.types import Command
+from typing import Callable, Self
 from typing_extensions import NotRequired
 from femtomeas.agent_common.agent_base import listEnumerateStr, indentExceptFirst, promptStringList
+from inspect import signature, getdoc, currentframe
+import asteval
+from femtomeas.agent_common.callgraph import Node
+
+counter = 0 #for unique indexing of graph nodes
+def getUniqueIdx():
+    global counter
+    counter += 1
+    return counter - 1
+
+def getTaskInfo(frame):
+    return f"{frame.f_code.co_name} : {getdoc(globals()[frame.f_code.co_name])}"
+
+class ActionsBlob:
+    def __init__(self, parent_node: Node):
+        self.parent_node = parent_node
+
+def TaskIdentifyActions(*,observable_tag: str)->ActionsBlob:
+    """Obtain the set of actions required for a specific observable
+    inputs:
+        - observable_tag: An observable_tag for a specific observable
+    outputs:
+        - An object describing the actions required for that observable
+    """    
+    return ActionsBlob(Node(f"TaskIdentifyActions_{getUniqueIdx()}", identifyActions, node_info=getTaskInfo(currentframe()) ) )
+
+class SourcesBlob:
+    def __init__(self, parent_node: Node):
+        self.parent_node = parent_node
+
+def TaskIdentifySources(*,observable_tag: str)->SourcesBlob:
+    """Obtain the set of sources required for a specific observable
+    inputs:
+        - observable_tag: An observable_tag for a specific observable
+    outputs:
+        - An object describing the sources required for that observable
+    """        
+    return SourcesBlob(Node(f"TaskIdentifySources_{getUniqueIdx()}", identifySources) )
+
+class EigenSolversBlob:
+    def __init__(self, parent_node: Node):
+        self.parent_node = parent_node
+
+def TaskIdentifyEigenSolvers(*,observable_tag: str, actions: ActionsBlob)->EigenSolversBlob:
+    """A task to obtain the set of eigensolvers required for a specific observable
+    inputs:
+        - An observable_tag for a specific observable
+        - The actions required for that observable
+    outputs:
+        - The eigensolvers required for that observable
+    """    
+    return EigenSolversBlob(Node(f"TaskIdentifyEigenSolvers_{getUniqueIdx()}", setupEigenSolvers, [actions], node_info=getTaskInfo(currentframe()) ) )
+
+class SolversBlob:
+    def __init__(self, parent_node: Node):
+        self.parent_node = parent_node
+
+def TaskIdentifySolvers(*,observable_tag: str, actions: ActionsBlob, eigensolvers: EigenSolversBlob | None)-> SolversBlob:
+    """A task to obtain the set of solvers required for a specific observable
+    inputs:
+      - An observable_tag for a specific observable 
+      - The actions required for that observable
+      - (Optional) The eigenvectors required for that observable
+    outputs:
+      - The solvers required for that observable    
+    """
+    return SolversBlob(Node(f"TaskIdentifySolvers_{getUniqueIdx()}", identifySolvers, [actions, eigensolvers], node_info=getTaskInfo(currentframe()) ) )
+
+class PropagatorsBlob:
+    def __init__(self, parent_node: Node):
+        self.parent_node = parent_node
+
+def TaskIdentifyPropagators(*,observable_tag: str, sources: SourcesBlob, solvers: SolversBlob)-> PropagatorsBlob:
+    """Obtain the set of propagators required for a specific observable
+    inputs:
+        - An observable_tag for a specific observable
+        - The solvers required to compute the propagators for this observable
+        - The sources required to compute the propagators for this observable
+    outputs:
+        - The propagators required to compute that observable
+        """
+    return PropagatorsBlob(Node(f"TaskIdentifyPropagators_{getUniqueIdx()}", identifyPropagators, [sources,solvers], node_info=getTaskInfo(currentframe()) ))
+
+class SmearedPropagatorsBlob:
+    def __init__(self, parent_node: Node):
+        self.parent_node = parent_node
+
+def TaskIdentifySmearedPropagators(*,observable_tag: str, propagators: PropagatorsBlob)-> SmearedPropagatorsBlob:
+    """Obtain the set of smeared propagators required for a specific observable
+    inputs:
+        - An observable_tag for a specific observable
+        - The propagators required to compute that observable        
+    outputs:
+        - The smeared propagators required to compute that observable (if any)
+    """
+    return SmearedPropagatorsBlob(Node(f"TaskIdentifySmearedPropagators_{getUniqueIdx()}", identifySmearedPropagators, [propagators], node_info=getTaskInfo(currentframe()) ))
+
+class ObservableComputeBlob:
+    def __init__(self, parent_node: Node):
+        self.parent_node = parent_node
+
+def TaskComputeObservable(*,observable_tag: str, propagators: PropagatorsBlob | None, smeared_propagators: SmearedPropagatorsBlob | None)->ObservableComputeBlob:
+    """Obtain the parameters and details for computing the observable
+    inputs:
+        - An observable_tag for a specific observable
+        - The propagators required to compute that observable
+        - The smeared propagators required to compute that observable        
+
+    Note: this function cannot be called with both "propagators" and "smeared_propagators" as None
+        
+    outputs:
+        - The module instances required to calculate this observable
+    """
+    return ObservableComputeBlob(Node(f"TaskComputeObservable_{getUniqueIdx()}", configureObservables, [propagators, smeared_propagators], node_info=getTaskInfo(currentframe()) ))
+
+
+registry = {  "TaskIdentifyActions" : TaskIdentifyActions, "TaskIdentifySources" : TaskIdentifySources, "TaskIdentifyEigenSolvers" : TaskIdentifyEigenSolvers, "TaskIdentifySolvers" : TaskIdentifySolvers,
+                "TaskIdentifyPropagators" : TaskIdentifyPropagators, "TaskIdentifySmearedPropagators": TaskIdentifySmearedPropagators, "TaskComputeObservable": TaskComputeObservable }
+
+def function_manifest():
+    lines = []
+    for name, fn in registry.items():
+        sig = signature(fn)
+        doc = getdoc(fn) or ""
+        lines.append(f"- {name}{sig}: {doc}")
+    return "\n".join(lines)
+
+def enactGraph(graph, observable_tag, llm_model, state):
+    enactor = lambda f, _: f(llm_model, observable_tag, "", state)
+    
+    def jumpback_decider(jumpback_points):
+        jumpback = queryYesNo("Do you want to jump back?")
+        if jumpback:
+            print("Jumpback points: ", jumpback_points)
+            pt = ""
+            while(pt not in jumpback_points):
+                pt = Input("Provide the jumpback node name")
+            return pt
+        return None
+
+    cache = {}
+    graph.evalWithCacheOOO(cache, jumpback_decider, enactor)
 
 class AgentOutput(BaseModel):
-    """Structured output for the agent"""    
-    question_to_user: str = Field("", description="A question posed to the user")
-    answer_to_user: str = Field("", description="An answer to a question posed by the user")
-    scratchpad_note: str = Field("", description="Notes kept by the agent, appended to the current scratchpad")
-    done: bool = Field(..., description="The agent's workflow is complete")
+    code: str = Field(..., description="Python code for performing the measurement workflow")
 
 
-class AgentState:
-    def reset(self, config_state: State, llm_model, ckpoint_file: str):                
-        self.scratch = []
-        self.config_state = config_state
-        self.llm_model = llm_model
-        self.ckpoint_file = ckpoint_file
+def observableWorkflowAgent(obs_instance : ObservableConfig, query, llm_model, state):
+    role = f"""writing a Python code snippet for performing the measurement of the following lattice QCD observable:
+{obs_instance.model_dump_json()}                        
+                            
+Measurement jobs are composed of module instances described alongside their parameters in an XML document that is passed to the LQCD software.
 
-    def __init__(self):
-        pass        
+Your code snippet must employ the functions in the "Registry" below to construct these module instances for this particular observable. These functions act upon a hidden internal state and query the user internally. Your focus should only be on calling these tools in the appropriate order. Follow the "Code rules" below. 
 
-agent_state = AgentState()                
+For the "observable_tag" input of the Registry functions, use "{obs_instance.obs_tag}"
 
-@tool
-def observable_info(user_text: str)->str:
-    """Pass the user's input 'user_text' to the observables subagent. Its response will contain structures describing any new observables identified along with associated background."""
-    AgentPrint("Invoking observable identification agent...")
-    new_obs = identifyObservables(agent_state.llm_model, user_text, agent_state.config_state)
+Do not ask the user to confirm or accept your code.
 
-    print("UPDATED OBSERVABLES", agent_state.config_state.observables.model_dump_json(), "END UPDATED OBSERVABLES")
+Module instances fall into classes: action modules, solver modules (for inverting the Dirac operator), eigensolver modules, source modules (for propagator sources), propagator modules and sink-smeared propagator modules.
 
-    return f"""----------------
-New observables:
-----------------
-{new_obs.model_dump_json()}
+Module dependencies form a directed graph. Most common observables such as two-point functions are built from modules belonging to the above classes with the following dependencies:
+action -> solver
+action -> eigensolver
+source, solver, (optional eigensolver) -> propagator
+propagator -> sink-smeared propagator
+propagators / sink-smeared propagators -> observables
+These dependency chains are also encapsulated in the inputs and outputs of the registry functions.
 
-{observableSkills(new_obs)}
+For deciding on the appropriate chain of functions, refer to the observable skill in the "Skill" section below.        
+
+-------------
+Registry
+-------------
+{function_manifest()}
+
+-------------
+Code rules
+-------------
+- Do not import any modules or functions; assume that the functions in the registry have already been imported.
+- Functions in the registry act on a hidden internal state. The inputs and outputs are merely handles for chaining the logic. Handles must all be consumed within the code snippet; do not store them in any output structures (lists, dictionaries, etc)
+- Your snippet should only perform the workflow and nothing else. Do not add code to write outputs.
+- Some functions allowing passing in the output of a previous call to this function. Use this to update set of modules in the class for subsequent calls to the function.
+- The last function call in the snippet should be to TaskComputeObservable, and the output ObservableComputeBlob object must be named "result"
+-------------
+Skill
+-------------
+{obs_instance.obs_type.skill()}
 """
-          
-@tool
-def observable_actions(obs_tag: str, obs_action_info: str)->bool:
-    """For a given observable, identify the required action module instances and store them internally.
-    Parameters:
-        obs_tag: The 'obs_tag' string of the observable. This must correspond to a tag in one of the JSON observable descriptions
-        obs_action_info: This parameter MUST contain any information you know about the *action* types and their parameters that the user requires for this observable. Only include information about actions.
-    Return:
-        True if the new information gathered by the subagent invalidates the later workflow stages, requiring them to be re-run
-    """
-    AgentPrint(f"Invoking action agent for observable {obs_tag} with known info '{obs_action_info}'...")
-    try:
-        return identifyActions(agent_state.llm_model, obs_tag, obs_action_info, agent_state.config_state) 
-    except Exception as e:
-        print("CAUGHT EXCEPTION",e)
-        raise e
 
-@tool
-def observable_sources(obs_tag: str, obs_source_info: str)->bool:
-    """For a given observable, identify the required source module instances and store them internally.
-    Parameters:
-        obs_tag: The 'obs_tag' string of the observable. This must correspond to a tag in one of the JSON observable descriptions
-        obs_source_info: This parameter MUST contain any information you know about the *source* types and their parameters that the user requires for this observable. Only include information about sources.
-    Return:
-        True if the new information gathered by the subagent invalidates the later workflow stages, requiring them to be re-run        
-    """
-    AgentPrint(f"Invoking source agent for observable {obs_tag} with known info '{obs_source_info}'...")
-    try:
-        return identifySources(agent_state.llm_model, obs_tag, obs_source_info, agent_state.config_state) 
-    except Exception as e:
-        print("CAUGHT EXCEPTION",e)
-        traceback.print_exc()
-        raise e
+    user_query_rules = [
+    "You can only ask the user questions about the sequence of registry function calls. The actual module instances within each class are determined by those registry functions.", 
+    "NEVER ask the user to provide details on modules or their parameters.",
+    "If there are optional steps, you MUST ask the user if they want to perform those steps; NEVER make assumptions."
+    ]
 
-@tool
-def observable_solvers(obs_tag: str, obs_solver_info: str)->bool:
-    """For a given observable, identify the required solver module instances and store them internally.
-    Parameters:
-        obs_tag: The 'obs_tag' string of the observable. This must correspond to a tag in one of the JSON observable descriptions
-        obs_solver_info: This parameter MUST contain any information you know about the *solver* types and their parameters that the user requires for this observable. Only include information about solvers.
-    Return:
-        True if the new information gathered by the subagent invalidates the later workflow stages, requiring them to be re-run        
-    """
-    AgentPrint(f"Invoking solver agent for observable {obs_tag} with known info '{obs_solver_info}'...")
-    try:
-        return identifySolvers(agent_state.llm_model, obs_tag, obs_solver_info, agent_state.config_state) 
-    except Exception as e:
-        print("CAUGHT EXCEPTION",e)
-        traceback.print_exc()
-        raise e
+    def printCode(obj):
+        return prettyPrintPydantic(obj.code)
+
+    graph = None
+
+    def validator(obj):
+            symtable_in = asteval.make_symbol_table(use_numpy=False, **registry)
+            aeval = asteval.Interpreter(symtable=symtable_in)
+            aeval(obj.code)
+
+            errors = ""
+            if len(aeval.error)>0:
+                for err in aeval.error:
+                    e = err.get_error()
+                    errors = errors + f"{e[0]}:{e[1]}\n"
+            if len(errors) > 0:
+                print("USED INSTANCE CODE ERRORS", errors)
+                return False, HumanMessage(f"Running your use_instance_code code produced error(s): {errors}")    
+
+            if "result" not in aeval.symtable:
+                print("RESULT NOT IN CODE")
+                return False, HumanMessage("Your code must produce an ObservableComputeBlob named 'result'")
+            if not isinstance(aeval.symtable['result'], ObservableComputeBlob):
+                print("RESULT NOT ObservableComputeBlob")
+                return False, HumanMessage("'result' must be an ObservableComputeBlob instance")
+
+            nonlocal graph
+            graph = aeval.symtable['result'].parent_node #store the validated graph so we don't need to reevaluate if it is accepted
+            return True, ""
+
+    _ = parameterAgent(llm_model, AgentOutput, role, tools=[], additional_user_query_rules=user_query_rules, human_validation_output_formatter=printCode, validator=validator)
+
+    assert graph is not None
+    enactGraph(graph, obs_instance.obs_tag, llm_model, state)
 
 
-@tool
-def observable_eigensolvers(obs_tag: str, obs_eigensolver_info: str)->bool:
-    """For a given observable, identify the required eigensolver module instances and store them internally.
-    Parameters:
-        obs_tag: The 'obs_tag' string of the observable. This must correspond to a tag in one of the JSON observable descriptions
-        obs_eigensolver_info: This parameter MUST contain any information you know about the *eigensolver* types and their parameters that the user requires for this observable. Only include information about eigensolvers.
-    Return:
-        True if the new information gathered by the subagent invalidates the later workflow stages, requiring them to be re-run        
-    """
-    AgentPrint(f"Invoking eigensolver agent for observable {obs_tag} with known info '{obs_eigensolver_info}'...")
-    try:
-        return setupEigenSolvers(agent_state.llm_model, obs_tag, obs_eigensolver_info, agent_state.config_state) 
-    except Exception as e:
-        print("CAUGHT EXCEPTION",e)
-        traceback.print_exc()
-        raise e
-    
-@tool
-def observable_propagators(obs_tag: str, obs_prop_info: str)->bool:
-    """For a given observable, identify the required propagator module instances and store them internally.
-    Parameters:
-        obs_tag: The 'obs_tag' string of the observable. This must correspond to a tag in one of the JSON observable descriptions
-        obs_prop_info: This parameter MUST contain any information you know about the *propagators* and their parameters that the user requires for this observable. Only include information about propagators.
-    Return:
-        True if the new information gathered by the subagent invalidates the later workflow stages, requiring them to be re-run        
-    """
-    AgentPrint(f"Invoking propagator agent for observable {obs_tag} with known info '{obs_prop_info}'...")
-    try:
-        return identifyPropagators(agent_state.llm_model, obs_tag, obs_prop_info, agent_state.config_state) 
-    except Exception as e:
-        print("CAUGHT EXCEPTION",e)
-        traceback.print_exc()
-        raise e
 
 
-@tool
-def observable_smeared_propagators(obs_tag: str, obs_sprop_info: str)->bool:
-    """For a given observable, identify the required smeared-propagator module instances and store them internally.
-    Parameters:
-        obs_tag: The 'obs_tag' string of the observable. This must correspond to a tag in one of the JSON observable descriptions
-        obs_sprop_info: This parameter MUST contain any information you know about the *smeared-propagators* and their parameters that the user requires for this observable. Only include information about propagators.
-    Return:
-        True if the new information gathered by the subagent invalidates the later workflow stages, requiring them to be re-run        
-    """
-    AgentPrint(f"Invoking smeared-propagator agent for observable {obs_tag} with known info '{obs_sprop_info}'...")
-    try:
-        return identifySmearedPropagators(agent_state.llm_model, obs_tag, obs_sprop_info, agent_state.config_state) 
-    except Exception as e:
-        print("CAUGHT EXCEPTION",e)
-        traceback.print_exc()
-        raise e
-
-
-@tool
-def observable_calculation(obs_tag: str, obs_corr_info: str)->bool:
-    """For a given observable, identify the required observable calculation module instances (i.e. those that compute the observable itself from the propagators/other inputs) and store them internally.
-    Parameters:
-        obs_tag: The 'obs_tag' string of the observable. This must correspond to a tag in one of the JSON observable descriptions
-        obs_corr_info: This parameter MUST contain any information you know about the *observable calculations* and their parameters that the user requires for this observable. Only include information about observable calculations.
-    Return:
-        True if the new information gathered by the subagent invalidates the later workflow stages, requiring them to be re-run        
-    """
-    AgentPrint(f"Invoking observable calculation agent for observable {obs_tag} with known info '{obs_corr_info}'...")
-    try:
-        return configureObservables(agent_state.llm_model, obs_tag, obs_corr_info, agent_state.config_state) 
-    except Exception as e:
-        print("CAUGHT EXCEPTION",e)
-        traceback.print_exc()
-        raise e
 
 
 
@@ -224,107 +294,7 @@ def measConfigAgent(query, llm_model, ckpoint_file="state.json", reload_state=Fa
 
     print(state)
 
-    agent_state.reset(state, llm_model, ckpoint_file)
-    
-    #for optional steps, call the subagent anyway as the subagent will determine whether it needs to instantiate anything
-    #subagents return code snippet by handle for generating the *additional* instances
-    #subagents also return routing info, like "user "
+    obs = identifyObservables(llm_model, state.query, state)
 
-    #observable_info agent return handles for the observable types, must be passed to tools in chain
-
-    sys = f"""
-You are a router agent responsible for deciding on and executing an workflow to aid the user in constructing a lattice QCD measurement job specification. Measurement jobs are composed of module instances described alongside their parameters in an XML document that is passed to the LQCD software.
-
-Module instances fall into classes: action modules, solver modules (for inverting the Dirac operator), eigensolver modules, source modules (for propagator sources), propagator modules and sink-smeared propagator modules.
-
-Module dependencies form a directed graph. Most common observables such as two-point functions are built from modules belonging to the above classes with the following dependencies:
-    action -> solver
-    action -> eigensolver
-    source, solver, (optional eigensolver) -> propagator
-    propagator -> sink-smeared propagator
-    propagators / sink-smeared propagators -> observables
-
-A workflow is composed of a sequence of tool calls, each of which calls a subagent responsible for a particular class of module instances. You must call the appropriate tool to pass the task of identify the required modules in a class to the appropriate subagent.
-    - Where a corresponding parameter exists, you must pass any known information about the module class instances or their parameters to the tool
-    - The tools may return an indicator that later workflow stages were invalidated. This can occur if the subagent changed the existing calculation setup. If this happens, you must rerun the later workflow stages in order from where the invalidation occurred.
-
-Your task is to identify and execute the appropriate workflow / call chain to construct the observables. This chain must be followed in the direction of dependency flow.
-
-On each turn you must respond with structured output in the AgentOutput schema:
-{AgentOutput.model_json_schema() }
-
-Aside from making tool calls to perform these workflows, you can also ask the user questions and respond to the user's questions. 
-    - Use the output field "answer_to_user" to answer a question that the user posed, if any. If the user asks a question, your response must contain an answer.
-    - Use the output field "question_to_user" to ask a question.
-    - You can only ask the user questions about the overall workflow. The actual module instances within each class are determined by the subagent.
-    - Do not ask the user to provide module instance types or their parameters; this will be done by the subagent.
-These outputs will be sent to the user and their response will be contained in the next message you receive. 
-
-Use the "scratchpad_note" field of your output to record notes to yourself (these are not visible to the user). Refer to the scratchpad rules below for appropriate content.
-
-Before calling a tool sequence you must first describe the plan to the user via the "answer_to_user" output field. Use the scratchpad to take note of the call sequence you constructed.
-
-Once all workflows have been completed, signal completion using the "done" parameter in your output. 
-            
--------------------------------------------
-Scratchpad rules:
--------------------------------------------
-    - Use the scratchpad to record TODO notes for yourself to help you plan.
-"""
-    
-    config = {"configurable": {"thread_id": "1", "stream" : False}}
-
-    @dynamic_prompt
-    def system_prompt(request: ModelRequest) -> str:
-        prompt = sys + f"""
----------------------------
-Current scratchpad contents
----------------------------        
-{listEnumerateStr(agent_state.scratch)}
-"""
-        return prompt
-    
-    messages = [HumanMessage(query)]
-    agent = create_agent(model=llm_model, tools=[observable_info, observable_actions, observable_sources, observable_solvers, observable_eigensolvers, observable_propagators, observable_smeared_propagators, observable_calculation], middleware=[system_prompt], response_format=AgentOutput)
-
-    accepted = False
-    obj = None
-
-    while(accepted == False):
-        #Invoke the agent
-        try:
-            resp = agent.invoke({ "messages": messages }, config=config)
-            resp_struct = getStructuredResponse(resp, AgentOutput)
-        except Exception as e:
-            messages.append(HumanMessage(f"Encountered an error: {e}"))
-            continue
-
-        if resp_struct.done:            
-            accepted = queryYesNo("Would you like any more assistance?")
-            
-            if(accepted == False):
-                reason = AgentInput("What would you like me to do?: ")
-                agent_state.done = False
-                messages.append(HumanMessage(f"The user requires you to continue your workflow for the following reason:{reason}"))
-                continue
-            else:
-                break
-        
-        else:
-            #Append any notes to the scratchpad
-            if len(resp_struct.scratchpad_note) > 0:
-                print("SCRATCHPAD NOTE", resp_struct.scratchpad_note,"END SCRATCHPAD NOTE")
-                agent_state.scratch.append(resp_struct.scratchpad_note)            
-
-            #Compose the AI message to the user
-            ai_msg = resp_struct.answer_to_user + ("\n\n" if len(resp_struct.answer_to_user) > 0 else "") + resp_struct.question_to_user
-
-            #Add it to the message history
-            messages.append(AIMessage(ai_msg))
-
-            #Obtain the user response
-            user_resp = AgentInput(ai_msg)
-            messages.append(HumanMessage(user_resp))
-
-    return state
-
+    for o in obs.observables:        
+        observableWorkflowAgent(o, query, llm_model, state)

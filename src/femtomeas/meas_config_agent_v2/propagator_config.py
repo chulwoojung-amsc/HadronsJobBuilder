@@ -11,7 +11,7 @@ from typing import Literal, Union, List, Optional, Tuple
 from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from femtomeas.agent_common.common import *
 from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
-from femtomeas.agent_common.python_update_agent import parameterModelCall
+from femtomeas.agent_common.python_update_agent import parameterModelCall, InstanceInfo
 from .propagator_config_models import PropagatorConfig
 from .state import State
 
@@ -37,6 +37,20 @@ Propagator instance rules:
 """    
 
     user_info_rules = """- For the 'user_info' field, summarize any information relevant to what observables this solver will be used for provided by the user. It is important that any positional information about the propagator be included, for example whether it is the first or second propagator of a two-point function, or if it is a 'spectator' quark in a baryon. If the user does now specify any details, use an empty string. For example, if the user specifies that this propagator will be used for both quarks of the pion two-point function, enter "use for both quarks of the pion two-point function" in user_info."""
+
+    ##############################################
+    #Define the check for entries in the used-instance list that verifies the corresponding sources/solvers are still in the used-instance list
+    sourc, _ = executeCodeAndParse(state.observable_sources[observable_tag], InstanceInfo, f"{observable_tag}_sources") 
+    used_sources = [ a.instance_tag for a in sourc ]
+
+    solv, _ = executeCodeAndParse(state.observable_solvers[observable_tag], InstanceInfo, f"{observable_tag}_solvers") 
+    used_solvers = [ a.instance_tag for a in solv ]
+
+    def validateUsedInstance(m : PropagatorConfig):
+        return m.source in used_sources and m.solver in used_solvers
+
+    ###############################
+    Validators
 
     def instanceCheck(prop):
         if not state.isValidSource(prop.source):
@@ -97,7 +111,7 @@ For this observable you must use the solver instances described by the following
 
     ##############################
 
-    updated_prop_code, obs_prop_code, invalidate_later_workflow_stages = parameterModelCall(model, PropagatorConfig, "propagators", state.propagators, f"{observable_tag}_propagators", input_obs_prop_code, role, input_messages = [ HumanMessage(instructions) ], user_info_rules = user_info_rules, instance_validator=instanceCheck, group_validator=groupCheck)
+    updated_prop_code, obs_prop_code, invalidate_later_workflow_stages = parameterModelCall(model, PropagatorConfig, "propagators", state.propagators, f"{observable_tag}_propagators", input_obs_prop_code, role, input_messages = [ HumanMessage(instructions) ], user_info_rules = user_info_rules, instance_validator=instanceCheck, group_validator=groupCheck, used_instance_list_checker=validateUsedInstance)
 
     state.propagators = updated_prop_code
 

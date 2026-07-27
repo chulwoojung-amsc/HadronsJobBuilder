@@ -7,7 +7,7 @@ from langchain.messages import (
 )
 
 from femtomeas.agent_common.common import *
-from femtomeas.agent_common.python_update_agent import parameterAgent
+from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo
 from .eigenvectors_models import EigenSolverConfig
 from .state import State
 
@@ -55,7 +55,7 @@ def setupEigenSolvers(model, observable_tag:str, observable_info:str, state: Sta
 
         "LanczosEigenSolver.fileStem: It is only necessary to specify a fileStem if the user wants the eigenvectors to be saved (storeEvecs == True). If they do not, you must use an empty string.",
 
-        "LanczosEigenSolver.action_name: infer the action name based upon the information the user provided regarding the use of the eigenvectors by correlating that information with the user_info fields of the action instances. However you must ask the user to confirm your result.",
+        "action: infer the action name based upon the information the user provided regarding the use of the eigenvectors by correlating that information with the user_info fields of the action instances. However you must ask the user to confirm your result.",
 
         "ChebyParams.Npoly: The polynomial order Npoly must be an odd integer. If the user specifies an even integer, explain the issue to the user and request an odd value."
     ]
@@ -88,6 +88,17 @@ For this observable you must use the action instances described by the following
 {state.observable_actions[observable_tag]}
 """
 
+    ##############################################
+    #Keep an expanded copy of the used-actions list
+    act, _ = executeCodeAndParse(state.observable_actions[observable_tag], InstanceInfo, f"{observable_tag}_actions") 
+    used_actions = [ a.instance_tag for a in act ]
+
+    #Define the check for entries in the used-instance list that verifies the corresponding actions are still in the used-actions list
+    def validateUsedInstance(m : EigenSolverConfig):
+        return m.action in used_actions
+
+    ###############################################
+    #Validators for EigenSolverConfig
     def check(instance):
         return instance.check(state)
 
@@ -98,6 +109,7 @@ For this observable you must use the action instances described by the following
                     return (False, f"Eigensolver {eig[i].name} is the same as {eig[j].name}. Eigensolvers must be unique")
         return (True,"")
 
+    #################################################
     input_obs_eig_code = state.observable_eigensolvers[observable_tag] if state.observable_eigensolvers is not None and observable_tag in state.observable_eigensolvers else None
 
     updated_eig_code, obs_eig_code, invalidate_later_workflow_stages = parameterAgent(model, EigenSolverConfig, "eigensolvers", state.eigensolvers, f"{observable_tag}_eigensolvers", input_obs_eig_code, \

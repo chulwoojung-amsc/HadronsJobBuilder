@@ -38,6 +38,50 @@ class InstanceInfo(BaseModel):
     instance_tag: str = Field(..., description="The name/tag of the instance")
     user_info: str = Field(..., description="Additional information (if any) provided by the user on how this instance will be employed")
 
+def checkUsedInstances(used_instance_list_name: str,
+                        used_instance_list_code_input: str,
+                        structured_output_model : BaseModel,
+                        instantiation_list_name: str,
+                        instantiation_list_code_input: str,
+                        checker: Callable ):
+    """Check the used-instance list and remove invalided entries either because the instance they point to no longer exists or it fails another, user-specified validation (e.g. if a dependency no longer exists)"""
+    instance_list, e = executeCodeAndParse(instantiation_list_code_input, structured_output_model, instantiation_list_name)
+    assert len(e) == 0
+    instance_map = {}
+    for i in instance_list:
+        instance_map[i.name] = i
+
+    orig_use_list, e = executeCodeAndParse(used_instance_list_code_input, InstanceInfo, used_instance_list_name)
+    assert len(e) == 0
+
+    regen_list = False
+    validated = []
+    for o in orig_use_list:
+        if o.instance_tag not in instance_map.keys(): #if somehow the instance no longer exists
+            regen_list=True            
+        elif not checker(instance_map[o.instance_tag]):
+            regen_list=True
+        else:
+            validated.append(o)
+
+    if regen_list:
+        #we don't need an LLM to rewrite this list
+        out = f"{used_instance_list_name} = ["
+        first = True
+        for o in validated:
+            if not first:
+                out = out + ", "
+            out = out + str(o.model_dump())
+            first = False
+        out += ']'                        
+        return False, out 
+    else:
+        return True, ""
+
+
+
+
+
 
 class AgentOutput(BaseModel):
     """Structured output for the agent"""    
@@ -179,18 +223,34 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
                    input_messages = [ HumanMessage("Start your workflow") ],
                    additional_user_query_rules = [],                   
                    instance_validator : Callable | None = None,
-                   group_validator : Callable | None = None
+                   group_validator : Callable | None = None,
+                   used_instance_list_checker : Callable = lambda m: True #a custom checked for instances referred to in the used-instance list to test whether they remain valid
                    ):
 
     agent_state.reset()    
     do_append_to_new_instances = instantiation_list_code_input is not None
     invalidate_remaining_workflow = False #whether changes here invalidate later steps in the workflow
 
-    do_append_to_used_instances = None
+    do_append_to_used_instances = False
     if used_instance_list_code_input is not None:
         do_append_to_used_instances = queryYesNo("The used module instance list already exists for this observable, do you wish to append to this list? Answering 'n' will overwrite the list and require later workflow stages to be repeated for this observable.", f"\nExisting code\n{used_instance_list_code_input}")
         if not do_append_to_new_instances: #if we overwrite the used module instance list we need to redo later workflow stages
             invalidate_remaining_workflow = True
+
+    ################################################
+    #if we are appending, first check to ensure all the existing used-instance entries remain valid, if not remove them
+    if do_append_to_used_instances:
+        v, c = checkUsedInstances(used_instance_list_name, used_instance_list_code_input, structured_output_model,  instantiation_list_name, used_instance_list_code_input, used_instance_list_checker)
+        if not v:
+            AgentPrint(f"""I have detected that some entries from the previous used-instance list have become invalid and have removed them. Ensure that you include replacements for these if needed.
+Old used-instance code:
+{used_instance_list_code_input}
+New used-instance code:
+{v}            
+"""
+            )
+            used_instance_list_code_input = c
+    ##################################################  
 
     instantiation_list_code_base = instantiation_list_code_input if instantiation_list_code_input is not None else f"{instantiation_list_name} = []"
 
@@ -471,17 +531,33 @@ def parameterModelCall(llm_model, structured_output_model : BaseModel,
                    user_info_rules : str | None = None, #extra rules for populating the "user_info" field of InstanceInfo
                    input_messages = [ HumanMessage("Start your workflow") ],                   
                    instance_validator : Callable | None = None,
-                   group_validator : Callable | None = None
+                   group_validator : Callable | None = None,
+                   used_instance_list_checker : Callable = lambda m: True #a custom checked for instances referred to in the used-instance list to test whether they remain valid
                    ):
 
     do_append_to_new_instances = instantiation_list_code_input is not None
     invalidate_remaining_workflow = False #whether changes here invalidate later steps in the workflow
 
-    do_append_to_used_instances = None
+    do_append_to_used_instances = False
     if used_instance_list_code_input is not None:
         do_append_to_used_instances = queryYesNo("The used module instance list already exists for this observable, do you wish to append to this list? Answering 'n' will overwrite the list and require later workflow stages to be repeated for this observable.", f"\nExisting code\n{used_instance_list_code_input}")
         if not do_append_to_new_instances: #if we overwrite the used module instance list we need to redo later workflow stages
             invalidate_remaining_workflow = True
+
+    ################################################
+    #if we are appending, first check to ensure all the existing used-instance entries remain valid, if not remove them
+    if do_append_to_used_instances:
+        v, c = checkUsedInstances(used_instance_list_name, used_instance_list_code_input, structured_output_model,  instantiation_list_name, used_instance_list_code_input, used_instance_list_checker)
+        if not v:
+            AgentPrint(f"""I have detected that some entries from the previous used-instance list have become invalid and have removed them. Ensure that you include replacements for these if needed.
+Old used-instance code:
+{used_instance_list_code_input}
+New used-instance code:
+{v}            
+"""
+            )
+            used_instance_list_code_input = c
+    ##################################################  
 
     instantiation_list_code_base = instantiation_list_code_input if instantiation_list_code_input is not None else f"{instantiation_list_name} = []"
 
@@ -618,3 +694,5 @@ def parameterModelCall(llm_model, structured_output_model : BaseModel,
     return instantiation_list_code_base + "\n" + new_instance_code, \
            used_instance_list_code_input + "\n" + use_instance_code if do_append_to_used_instances else use_instance_code,  \
            invalidate_remaining_workflow
+
+

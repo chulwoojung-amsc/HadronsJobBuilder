@@ -29,8 +29,6 @@ class LanczosEigenSolver(BaseModel):
     """Parameters of the Lanczos eigensolver"""
     type: Literal["LanczosEigenSolver"] = "LanczosEigenSolver"
 
-    action_name : str = Field(..., description="The name of the associated action")
-    
     cheby: ChebyParams = Field(..., description="Parameters of the Chebyshev filter")
     Nstop: PositiveInt = Field(..., description="Stop the solver once this many eigenvectors are within the tolerance")
     Nk: PositiveInt = Field(..., description="The number of eigenvectors to keep on each restart")
@@ -41,11 +39,11 @@ class LanczosEigenSolver(BaseModel):
     storeEvecs: bool = Field(False, description="Indicate whether the eigenvectors are to be written to disk")
     fileStem: str = Field("", description="The file stem for the eigenvectors. The trajectory index will be appended")    
 
-    def check(self, state):
+    def check(self, state, action_name):
         cheby_valid, cheby_why = self.cheby.check(state)
         if not cheby_valid:
             return (False, cheby_why)
-        if not state.isValidAction(self.action_name):
+        if not state.isValidAction(action_name):
             return (False, "Provided action name is not among the list of actions in the state")
         if self.storeEvecs and self.fileStem == "":
             return (False, "If writing the eigenvectors, a valid file stem must be provided")
@@ -55,7 +53,7 @@ class LanczosEigenSolver(BaseModel):
         return (True,"")
         
     
-    def setXML(self,name,xml):
+    def setXML(self,name,xml,action_name):
         #We expose only the guesser to the agents, the other crud can stay internal
         
         lanc_name = name + "_solver"
@@ -63,7 +61,7 @@ class LanczosEigenSolver(BaseModel):
 
         #Operator module
         op_opt = xml.addModule(op_name, "MFermion::Operators")
-        HadronsXML.setValue(op_opt, "action", self.action_name)
+        HadronsXML.setValue(op_opt, "action", action_name)
 
         #Guesser module (create one even if we don't intend to use it as it has no real overhead)
         guesser_opt = xml.addModule(name, "MGuesser::ExactDeflation")
@@ -94,10 +92,11 @@ class LanczosEigenSolver(BaseModel):
 
 class EigenSolverConfig(BaseModel):
     name : str = Field(..., description="The name for the eigensolver instance")  #technically this is the name of the guesser but that is irrelevant to the functioning of the agents
+    action : str = Field(..., description="The name of the associated action")
     solver_args: Union[LanczosEigenSolver] = Field(..., description="Parameters of the eigensolver. Each item must have a 'type' field. Valid values are: LanczosEigenSolver", discriminator='type')
     
     def check(self, state):
-        return self.solver_args.check(state)
+        return self.solver_args.check(state, self.action)
 
     def setXML(self,xml):
-        self.solver_args.setXML(self.name, xml)
+        self.solver_args.setXML(self.name, xml, self.action)

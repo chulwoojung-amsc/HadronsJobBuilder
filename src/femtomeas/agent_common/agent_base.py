@@ -14,7 +14,7 @@ from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from langchain.agents import create_agent
 from langchain.agents.middleware import before_model, after_model, AgentState, dynamic_prompt, ModelRequest
 import json
-from .common import getUserInput, provideInformationToUser, queryYesNo, prettyPrintPydantic, getStructuredResponse, Print as AgentPrint, Input as AgentInput
+from .common import getUserInput, provideInformationToUser, queryYesNo, prettyPrintPydantic, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput
 from femtomeas.workflow_manager.api_general import getKnownMachines, getUserAccountProjects, getMachineQueues
 from langchain.tools import tool
 from langgraph.checkpoint.memory import MemorySaver
@@ -79,7 +79,8 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
                    input_messages = [ HumanMessage("Start your workflow") ],
                    additional_user_query_rules = [],
                    additional_workflow_termination_rules: str | None = None,
-                   validator : Callable | None = None                   
+                   validator : Callable | None = None,
+                   human_validation_output_formatter = prettyPrintPydantic #function used to format output for human validation                   
                    ):
 
     agent_state.reset()
@@ -253,7 +254,12 @@ Current {output_type_name} params struct
         print("OUTPUT", prettyPrintPydantic(resp_struct), "\n\n" )
 
         if resp_struct.done:
-            obj = structured_output_model.model_validate_json(resp_struct.params_struct)            
+            try:
+                obj = structured_output_model.model_validate_json(resp_struct.params_struct)            
+            except Exception as e:
+                print("PYDANTIC VALIDATION ERROR",e)   
+                user_interactions.append(HumanMessage(f"There was an error validating your output Pydantic: {e}"))     
+                continue
             
             #Automatic validation
             if validator is not None:                                                           
@@ -264,11 +270,10 @@ Current {output_type_name} params struct
                     continue
                 
             #Human validation            
-            accepted = queryYesNo("Is the following correct?", "\n" + prettyPrintPydantic(obj))
+            accepted = queryYesNo("Is the following correct?", "\n" + human_validation_output_formatter(obj))
             
             if(accepted == False):
                 reason = AgentInput("Explain what is wrong: ")
-                agent_state.done = False
                 user_interactions.append(HumanMessage(f"Your previous response was not accepted for the following reason: {reason}"))
                 continue
             else:
@@ -291,4 +296,91 @@ Current {output_type_name} params struct
             #Obtain the user response
             user_resp = AgentInput(ai_msg)
             user_interactions.append(HumanMessage(user_resp))
+    return obj
+
+
+
+
+
+
+
+
+
+
+       
+def parameterModelCall(llm_model, structured_output_model : BaseModel,
+                       role: str,                    
+                       parameter_rules : List[str] = [],
+                       input_messages = [ HumanMessage("Start your workflow") ],
+                       validator : Callable | None = None                   
+                   ):
+
+    output_type_name = type(structured_output_model).__name__
+    param_rules_header = """    -------------------------------------------
+    Additional rules for specific parameters:   
+    -------------------------------------------
+    """ if len(parameter_rules) > 0 else ""
+
+    sys = f"""
+    You are a responsible for {role}
+    
+    Your goal is to identify the values for each of the fields in the {output_type_name} JSON structure. 
+      - The schema is provided in the "Schema for {output_type_name}" section below.      
+
+    You must respond with structured output in the {output_type_name} schema.
+
+    ------------------------------------------------------------------------------------------------------------
+    General Parameter Rules:
+    These rules describe how you should obtain values for parameters in the output {output_type_name} structure
+    ------------------------------------------------------------------------------------------------------------
+    - Obtain the values for the parameters in the order they appear in {output_type_name}    
+    - If the parameter rules specify that *you* should choose or set the value of a specific parameter yourself never ask the user about this parameter.
+    - **Never** guess a parameter that should be provided by the user. These values should always be obtained from the user. Never record such a parameter value unless it has been explicitly provided by the user.    
+    - If there is only one option for a parameter you must use that value. 
+    
+{param_rules_header}    
+
+{promptStringList(parameter_rules,4)}   
+
+    ------------------------------
+    Schema for {output_type_name} 
+    ------------------------------
+    Follow this schema for your "params_struct" output
+    """ + json.dumps(structured_output_model.model_json_schema())
+    
+    user_interactions = input_messages.copy()
+    accepted = False
+    obj = None
+
+    while(accepted == False):
+        #Invoke the agent
+        try:
+            obj = callModelWithStructuredOutput(llm_model, sys, user_interactions, structured_output_model)
+        except Exception as e:
+            print("ERROR",e)
+            user_interactions.append(HumanMessage(f"Encountered an error: {e}"))
+            continue
+
+        print("OUTPUT", prettyPrintPydantic(obj), "\n\n" )
+
+            
+        #Automatic validation
+        if validator is not None:                                                           
+            valid = validator(obj)
+            if not valid[0]:
+                print("VALIDATION FAIL",valid)
+                user_interactions.append(HumanMessage(f"Your previous response failed validation due to: {valid[1]}"))
+                continue
+            
+        #Human validation            
+        accepted = queryYesNo("Is the following correct?", "\n" + prettyPrintPydantic(obj))
+        
+        if(accepted == False):
+            reason = AgentInput("Explain what is wrong: ")            
+            user_interactions.append(HumanMessage(f"Your previous response was not accepted for the following reason: {reason}"))
+            continue
+        else:
+            break
+        
+   
     return obj
