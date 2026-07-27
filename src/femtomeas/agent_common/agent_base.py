@@ -82,7 +82,7 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
                    validator : Callable | None = None,
                    human_validation_output_formatter = prettyPrintPydantic #function used to format output for human validation                   
                    ):
-
+    assert isinstance(input_messages, list)
     agent_state.reset()
    
     output_type_name = type(structured_output_model).__name__

@@ -75,13 +75,11 @@ For this observable you must use the propagator instances described by the follo
 
     input_obs_sprop_code = state.observable_smeared_propagators[observable_tag] if state.observable_smeared_propagators is not None and observable_tag in state.observable_smeared_propagators else None
 
-    updated_sprop_code, obs_sprop_code, invalidate_later_workflow_stages = parameterAgent(model, SmearedPropagatorConfig, "smeared_propagators", state.smeared_propagators, f"{observable_tag}_smeared_propagators", \
-                                                                                          input_obs_sprop_code, role, tools=[], input_messages=[ HumanMessage(instructions) ], parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=checkAll )        
+    updated_sprop_code, obs_sprop_code, _ = parameterAgent(model, SmearedPropagatorConfig, "smeared_propagators", state.smeared_propagators, f"{observable_tag}_smeared_propagators", \
+                                                            input_obs_sprop_code, role, tools=[], input_messages=[ HumanMessage(instructions) ], parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=checkAll )        
 
     state.smeared_propagators = updated_sprop_code
 
     if state.observable_smeared_propagators is None:
         state.observable_smeared_propagators = dict()
     state.observable_smeared_propagators[observable_tag] = obs_sprop_code
-
-    return invalidate_later_workflow_stages

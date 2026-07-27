@@ -88,15 +88,6 @@ For this observable you must use the action instances described by the following
 {state.observable_actions[observable_tag]}
 """
 
-    ##############################################
-    #Keep an expanded copy of the used-actions list
-    act, _ = executeCodeAndParse(state.observable_actions[observable_tag], InstanceInfo, f"{observable_tag}_actions") 
-    used_actions = [ a.instance_tag for a in act ]
-
-    #Define the check for entries in the used-instance list that verifies the corresponding actions are still in the used-actions list
-    def validateUsedInstance(m : EigenSolverConfig):
-        return m.action in used_actions
-
     ###############################################
     #Validators for EigenSolverConfig
     def check(instance):
@@ -112,12 +103,10 @@ For this observable you must use the action instances described by the following
     #################################################
     input_obs_eig_code = state.observable_eigensolvers[observable_tag] if state.observable_eigensolvers is not None and observable_tag in state.observable_eigensolvers else None
 
-    updated_eig_code, obs_eig_code, invalidate_later_workflow_stages = parameterAgent(model, EigenSolverConfig, "eigensolvers", state.eigensolvers, f"{observable_tag}_eigensolvers", input_obs_eig_code, \
-                                                                                      role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=[ HumanMessage(instructions) ], additional_user_query_rules=additional_user_query_rules, instance_validator=check, group_validator=groupCheck, user_info_rules=user_info_rules)
+    updated_eig_code, obs_eig_code, _ = parameterAgent(model, EigenSolverConfig, "eigensolvers", state.eigensolvers, f"{observable_tag}_eigensolvers", input_obs_eig_code, \
+                                                        role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=[ HumanMessage(instructions) ], additional_user_query_rules=additional_user_query_rules, instance_validator=check, group_validator=groupCheck, user_info_rules=user_info_rules)
     state.eigensolvers = updated_eig_code
 
     if state.observable_eigensolvers is None:
         state.observable_eigensolvers = dict()
     state.observable_eigensolvers[observable_tag] = obs_eig_code
-
-    return invalidate_later_workflow_stages

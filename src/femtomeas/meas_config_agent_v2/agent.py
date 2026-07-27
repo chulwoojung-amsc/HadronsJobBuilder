@@ -147,6 +147,10 @@ class ObservableComputeBlob:
 
 def TaskComputeObservable(*,observable_tag: str, propagators: PropagatorsBlob | None, smeared_propagators: SmearedPropagatorsBlob | None)->ObservableComputeBlob:
     """Obtain the parameters and details for computing the observable
+    Supports:
+        - Meson two-point functions
+        - Writing propagators to disk
+
     inputs:
         - An observable_tag for a specific observable
         - The propagators required to compute that observable
@@ -171,21 +175,8 @@ def function_manifest():
         lines.append(f"- {name}{sig}: {doc}")
     return "\n".join(lines)
 
-def enactGraph(graph, observable_tag, llm_model, state):
-    enactor = lambda f, _: f(llm_model, observable_tag, "", state)
-    
-    def jumpback_decider(jumpback_points):
-        jumpback = queryYesNo("Do you want to jump back?")
-        if jumpback:
-            print("Jumpback points: ", jumpback_points)
-            pt = ""
-            while(pt not in jumpback_points):
-                pt = Input("Provide the jumpback node name")
-            return pt
-        return None
-
-    cache = {}
-    graph.evalWithCacheOOO(cache, jumpback_decider, enactor)
+def enactGraph(graph, observable_tag, llm_model, state):    
+    graph.eval(lambda f, _: f(llm_model, observable_tag, "", state))
 
 class AgentOutput(BaseModel):
     code: str = Field(..., description="Python code for performing the measurement workflow")
@@ -246,29 +237,29 @@ Skill
     graph = None
 
     def validator(obj):
-            symtable_in = asteval.make_symbol_table(use_numpy=False, **registry)
-            aeval = asteval.Interpreter(symtable=symtable_in)
-            aeval(obj.code)
+        symtable_in = asteval.make_symbol_table(use_numpy=False, **registry)
+        aeval = asteval.Interpreter(symtable=symtable_in)
+        aeval(obj.code)
 
-            errors = ""
-            if len(aeval.error)>0:
-                for err in aeval.error:
-                    e = err.get_error()
-                    errors = errors + f"{e[0]}:{e[1]}\n"
-            if len(errors) > 0:
-                print("USED INSTANCE CODE ERRORS", errors)
-                return False, HumanMessage(f"Running your use_instance_code code produced error(s): {errors}")    
+        errors = ""
+        if len(aeval.error)>0:
+            for err in aeval.error:
+                e = err.get_error()
+                errors = errors + f"{e[0]}:{e[1]}\n"
+        if len(errors) > 0:
+            print("USED INSTANCE CODE ERRORS", errors)
+            return False, HumanMessage(f"Running your use_instance_code code produced error(s): {errors}")    
 
-            if "result" not in aeval.symtable:
-                print("RESULT NOT IN CODE")
-                return False, HumanMessage("Your code must produce an ObservableComputeBlob named 'result'")
-            if not isinstance(aeval.symtable['result'], ObservableComputeBlob):
-                print("RESULT NOT ObservableComputeBlob")
-                return False, HumanMessage("'result' must be an ObservableComputeBlob instance")
+        if "result" not in aeval.symtable:
+            print("RESULT NOT IN CODE")
+            return False, HumanMessage("Your code must produce an ObservableComputeBlob named 'result'")
+        if not isinstance(aeval.symtable['result'], ObservableComputeBlob):
+            print("RESULT NOT ObservableComputeBlob")
+            return False, HumanMessage("'result' must be an ObservableComputeBlob instance")
 
-            nonlocal graph
-            graph = aeval.symtable['result'].parent_node #store the validated graph so we don't need to reevaluate if it is accepted
-            return True, ""
+        nonlocal graph
+        graph = aeval.symtable['result'].parent_node #store the validated graph so we don't need to reevaluate if it is accepted
+        return True, ""
 
     _ = parameterAgent(llm_model, AgentOutput, role, tools=[], additional_user_query_rules=user_query_rules, human_validation_output_formatter=printCode, validator=validator)
 
@@ -294,7 +285,9 @@ def measConfigAgent(query, llm_model, ckpoint_file="state.json", reload_state=Fa
 
     print(state)
 
+    AgentPrint("Identifying observables...")
     obs = identifyObservables(llm_model, state.query, state)
 
-    for o in obs.observables:        
+    for o in obs.observables:
+        AgentPrint("Constructing workflow for observable ", o.obs_tag)
         observableWorkflowAgent(o, query, llm_model, state)

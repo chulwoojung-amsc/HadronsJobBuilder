@@ -18,7 +18,7 @@ def identifyObservables(model, user_input: str, state: State)->ObservablesInfo:
 
    role = f"""identifying all lattice QCD observables the user wants to compute
 
-You will receive the user’s description of what observables they wish to compute, and your task is to use this information to identify any new entries required in ObservablesInfo.observables.
+You will receive the user's description of what observables they wish to compute, and your task is to use this information to identify any new entries required in ObservablesInfo.observables.
 
 The known observables are as follows:
 ---------------------------------------------
@@ -78,7 +78,7 @@ Rather than specifying observables, the user may ask you questions; respond to t
       return (valid, reason)
 
 
-   new_obs = parameterAgent(model, ObservablesInfo, role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=HumanMessage(user_input), validator=validator)
+   new_obs = parameterAgent(model, ObservablesInfo, role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=[ HumanMessage(user_input) ], validator=validator)
 
    updated_state = current_obs
    for o in new_obs.observables:

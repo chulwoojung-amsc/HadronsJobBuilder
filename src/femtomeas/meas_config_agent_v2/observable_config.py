@@ -38,11 +38,7 @@ def configureObservables(model, observable_tag:str, observable_info:str, state: 
   Rules for when the ObservableConfig.obs type is Meson2ptConfig:
   - Create a different instance for each unique combination of propagators
   - Treat the instructions for smeared and unsmeared propagators as applying to separate instances of Meson2ptConfig. 
-""",
-
-    """Meson2ptConfig.instances:
-
-  """,
+""",  
 
     """Meson2ptInstance.name:
   - You must assign a unique tag/name to the instance. Do not ask the user for this parameter
@@ -117,13 +113,11 @@ For this observable you must use the smeared propagator instances described by t
     if state.observable_observable_configs is not None and observable_tag in state.observable_observable_configs:
         input_obs_code = state.observable_observable_configs[observable_tag]
 
-    updated_obs_code, obs_obs_code, invalidate_later_workflow_stages = parameterAgent(model, ObservableConfig, "observable_configs", state.observable_configs, f"{observable_tag}_observables", input_obs_code,\
-                                                                                      role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, input_messages=[ HumanMessage(instructions) ], instance_validator=instanceCheck, user_info_rules=user_info_rules)
+    updated_obs_code, obs_obs_code, _ = parameterAgent(model, ObservableConfig, "observable_configs", state.observable_configs, f"{observable_tag}_observables", input_obs_code,\
+                                                        role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, input_messages=[ HumanMessage(instructions) ], instance_validator=instanceCheck, user_info_rules=user_info_rules)
 
     state.observables = updated_obs_code
 
     if state.observable_observable_configs is None:
         state.observable_observable_configs = dict()
     state.observable_observable_configs[observable_tag] = obs_obs_code
-
-    return invalidate_later_workflow_stages

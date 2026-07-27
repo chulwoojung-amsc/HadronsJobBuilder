@@ -614,7 +614,8 @@ New used-instance code:
     - **Never** guess a parameter that should be provided by the user. These values should always be obtained from the user. Never record such a parameter value unless it has been explicitly provided by the user.
     - If a parameter has a default, you must suggest that value to the user when asking your question about the parameter. Never assume a value without asking.    
     - If there is only one option for a parameter you must use that value. The first time this choice appears in your output you MUST also tell the user that you have made this choice in the "answer_to_user" field.
-
+    - Never repeat back a user's choice and ask them to confirm it.     
+    
     -------------------------------------------
     Recording code output rules:
     These rules apply to the code for generating the {output_type_name} structures you must record in the "new_instance_code" field of your output
@@ -632,7 +633,8 @@ New used-instance code:
     - The structure instances must follow the {output_type_name} schema for all fields and types, with the exception of unknown parameters. You must include all fields, even if they can have default values.
     - You must follow all rules (general and specific) provided in this prompt regarding the {output_type_name} parameters you record. 
     - The code you write must only pertain to creating {output_type_name} structures.
-    
+    - Never ask the user to confirm your code.
+
 {param_rules_header}    
 
 {promptStringList(parameter_rules,4)}

@@ -136,12 +136,10 @@ The following knowledge applies to this observable:
 
     input_obs_source_code = state.observable_sources[observable_tag] if state.observable_sources is not None and observable_tag in state.observable_sources else None
     
-    updated_source_code, obs_source_code, invalidate_later_workflow_stages = parameterAgent(model, SourceConfig, "sources", state.sources, f"{observable_tag}_sources", input_obs_source_code, role, \
-                                                                                            tools=[], input_messages=[ HumanMessage(instructions) ], parameter_rules=parameter_rules, group_validator=checkAll, additional_user_query_rules=additional_user_query_rules, user_info_rules=user_info_rules )
+    updated_source_code, obs_source_code, _ = parameterAgent(model, SourceConfig, "sources", state.sources, f"{observable_tag}_sources", input_obs_source_code, role, \
+                                                            tools=[], input_messages=[ HumanMessage(instructions) ], parameter_rules=parameter_rules, group_validator=checkAll, additional_user_query_rules=additional_user_query_rules, user_info_rules=user_info_rules )
     state.sources = updated_source_code
 
     if state.observable_sources is None:
         state.observable_sources = dict()
     state.observable_sources[observable_tag] = obs_source_code
-
-    return invalidate_later_workflow_stages

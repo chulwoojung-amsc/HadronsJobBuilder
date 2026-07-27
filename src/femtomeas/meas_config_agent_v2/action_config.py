@@ -67,12 +67,10 @@ The following knowledge applies to this observable:
     if state.observable_actions is not None and observable_tag in state.observable_actions:
         input_obs_action_code = state.observable_actions[observable_tag]
 
-    updated_action_code, obs_action_code, invalidate_later_workflow_stages = parameterAgent(model, ActionConfig, "actions", state.actions, f"{observable_tag}_actions", input_obs_action_code, role, tools=[], \
+    updated_action_code, obs_action_code, _ = parameterAgent(model, ActionConfig, "actions", state.actions, f"{observable_tag}_actions", input_obs_action_code, role, tools=[], \
                                                            tool_rules=[], parameter_rules=parameter_rules, user_info_rules=user_info_rules, input_messages=[ HumanMessage(instructions) ], group_validator=group_validate)
 
     state.actions = updated_action_code
     if state.observable_actions is None:
         state.observable_actions = dict()
     state.observable_actions[observable_tag] = obs_action_code
-
-    return invalidate_later_workflow_stages
