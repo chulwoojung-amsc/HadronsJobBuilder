@@ -615,7 +615,8 @@ New used-instance code:
     - If a parameter has a default, you must suggest that value to the user when asking your question about the parameter. Never assume a value without asking.    
     - If there is only one option for a parameter you must use that value. The first time this choice appears in your output you MUST also tell the user that you have made this choice in the "answer_to_user" field.
     - Never repeat back a user's choice and ask them to confirm it.     
-    
+    - If the user has made a decision about a parameter or type, never ask them about it again, never ask them to confirm it.
+
     -------------------------------------------
     Recording code output rules:
     These rules apply to the code for generating the {output_type_name} structures you must record in the "new_instance_code" field of your output

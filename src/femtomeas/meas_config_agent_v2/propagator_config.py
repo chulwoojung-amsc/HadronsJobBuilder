@@ -39,21 +39,33 @@ Propagator instance rules:
 
     user_info_rules = """- For the 'user_info' field, summarize any information relevant to what observables this solver will be used for provided by the user. It is important that any positional information about the propagator be included, for example whether it is the first or second propagator of a two-point function, or if it is a 'spectator' quark in a baryon. If the user does now specify any details, use an empty string. For example, if the user specifies that this propagator will be used for both quarks of the pion two-point function, enter "use for both quarks of the pion two-point function" in user_info."""
 
-    sourc, _ = executeCodeAndParse(state.observable_sources[observable_tag], InstanceInfo, f"{observable_tag}_sources") 
-    used_sources = [ a.instance_tag for a in sourc ]
+#     #Note that if the user wants to reuse the same set of propagators as for another observable, we can skip source/solver stages. As such there will not be entries in the state for those stages and this observable
+#     used_sources=None
+#     used_solvers=None
+#     extra_instructions = ""
 
-    solv, _ = executeCodeAndParse(state.observable_solvers[observable_tag], InstanceInfo, f"{observable_tag}_solvers") 
-    used_solvers = [ a.instance_tag for a in solv ]
-   
+#     if observable_tag in state.observable_sources:
+#         sourc, _ = executeCodeAndParse(state.observable_sources[observable_tag], InstanceInfo, f"{observable_tag}_sources") 
+#         used_sources = [ a.instance_tag for a in sourc ]
+#         extra_instructions += """
+
+# """
+#     if observable_tag in state.observable_solvers:
+#         solv, _ = executeCodeAndParse(state.observable_solvers[observable_tag], InstanceInfo, f"{observable_tag}_solvers") 
+#         used_solvers = [ a.instance_tag for a in solv ]
+#         extra_instructions += """
+
+# """
+
     def instanceCheck(prop):
         if not state.isValidSource(prop.source):
             return (False, f"\n-Source instance '{prop.source}' does not exist")        
         if not state.isValidSolver(prop.solver):
             return (False, f"\n-Solver instance '{prop.solver}' does not exist")
-        if not prop.source in used_sources:
-            return (False, f"\n-Source instance '{prop.source}' is not within the list of used source instances for this observable")        
-        if not prop.solver in used_solvers:
-            return (False, f"\n-Solver instance '{prop.solver}' is not within the list of used solver instances for this observable")        
+        # if used_sources is not None and prop.source not in used_sources:
+        #     return (False, f"\n-Source instance '{prop.source}' is not within the list of used source instances for this observable")        
+        # if used_solvers is not None and prop.solver not in used_solvers:
+        #     return (False, f"\n-Solver instance '{prop.solver}' is not within the list of used solver instances for this observable")        
                 
         return (True, "")
 
@@ -99,10 +111,10 @@ The complete set of action instances are generated using the following code:
 {state.actions}
 
 For this observable you must use the source instances described by the following code:
-{state.observable_sources[observable_tag]}
+{state.observable_sources[observable_tag] if observable_tag in state.observable_sources else f"{observable_tag}_sources = []"}
 
 For this observable you must use the solver instances described by the following code:
-{state.observable_solvers[observable_tag]}
+{state.observable_solvers[observable_tag] if observable_tag in state.observable_solvers else f"{observable_tag}_solvers = []"}
 """
     
     print("INSTRUCTIONS\n", instructions)

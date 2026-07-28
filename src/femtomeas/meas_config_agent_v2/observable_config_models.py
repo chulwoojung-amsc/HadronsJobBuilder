@@ -39,7 +39,7 @@ class ContractionSinkPoint(BaseModel):
         return (True, "")
       
 class ContractionSinkNone(BaseModel):
-    """Use this sink type when using smeared propagators"""
+    """You *use* this sink type when using smeared propagators. Never use this source type for regular, unsmeared propagators"""
     type: Literal["contraction_sink_none"] = "contraction_sink_none"
 
     def setXML(self,obs_name,xml):

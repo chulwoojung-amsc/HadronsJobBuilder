@@ -19,24 +19,29 @@ from .source_config_models import SourceConfig
 from .state import State
 
 def identifySources(model, observable_tag:str, observable_info:str, state: State):
+
+    # Perform the following workflow:
+    # 1) Check the user's first message to see if the source types of the required propagators has been specified.
+    #      If the source types have been specified in the *first* user message of the conversation:
+    #        - indicate to the user what source types you have identified and ask them if this is correct. 
+    #        - take note of any additional information about the parameters of those sources that is contained in the message history, e.g. source timeslices or locations 
+               
+    #      If the source types have not yet been specified in the first user message:
+    #        - ask the user to specify what source *types* they wish to use for which propagators. This question should not be specific to one observable or propagator; rather you should allow the user the freedom to specify information that could apply to multiple or even all propagators. In your question, list the sources that you support but do not list their associated parameters.
+    #        For example, "Specify the sources required for the calculation (supported options: <OPTIONS>)."
+    #        - Do not ask the user to provide parameters at this stage.
+          
+    #    For any subsequent messages, do not repeat this confirmation step.
+         
+
+
     role = """creating instances of SourceConfig for every propagator source required to compute the observable.
 
     Sources are inputs to constructing quark propagators. A source instance has a source type (e.g. point, wall) along with a set of parameters that depend on the source type. Each propagator requires a source, but can share the same source instance.
 
-    Perform the following workflow:
-    1) Check the message history to see if the source types of the required propagators has been specified.
-
-       If the source types have not yet been specified:
-         - ask the user to specify what source *types* they wish to use for which propagators. This question should not be specific to one observable or propagator; rather you should allow the user the freedom to specify information that could apply to multiple or even all propagators. In your question, list the sources that you support but do not list their associated parameters.
-           For example, "Specify the sources required for the calculation (supported options: <OPTIONS>)."
-         - Do not ask the user to provide parameters at this stage.
-          
-
-       If the source types have been specified:
-         - indicate to the user what source types you have identified and ask them if this is correct.
-         - take note of any additional information about the parameters of those sources that is contained in the message history, e.g. source timeslices or locations 
-    2) Identify the set of source instances required for the observable according to the rules below.
-    3) Follow your instructions for writing the appropriate code for the SourceConfig instances.
+  You goal is to:
+    1) Identify the set of source instances required for the observable according to the rules below.
+    2) Follow your instructions for writing the appropriate code for the SourceConfig instances.
         
   The rules for identifying the required source instances are as follows:
   - Create a separate entry for each unique collection of source parameters, for example if the user specified propagators with point sources at [0,0,0,0] and [12,24,12,24], create two separate source instances with different source locations.

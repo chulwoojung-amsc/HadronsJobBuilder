@@ -55,7 +55,6 @@ class State(BaseModel):
 
     gauge: GaugeFieldConfig | None = Field(None,description="The gauge configuration parameters")
     
-
     def getObservableType(self, observable_tag):
         if self.observables == None:
             raise Exception("state.observables is None!")

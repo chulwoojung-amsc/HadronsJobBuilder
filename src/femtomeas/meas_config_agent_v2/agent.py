@@ -12,7 +12,7 @@ from .eigenvectors import setupEigenSolvers
 from .solver_config import identifySolvers
 from .propagator_config import identifyPropagators
 from .smeared_prop_config import identifySmearedPropagators
-from .observable_config import configureObservables
+from .observable_config import configureMeson2pt
 from .observable_config_models import ObservableConfig
 from femtomeas.meas_config_agent.gauge import identifyGaugeConfigs
 from femtomeas.agent_common.agent_base import parameterAgent, parameterModelCall
@@ -57,71 +57,85 @@ def getUniqueIdx():
 def getTaskInfo(frame):
     return f"{frame.f_code.co_name} : {getdoc(globals()[frame.f_code.co_name])}"
 
+def funcWrapInfo(func, info_str):
+    """Bind an info string from the router agent to the function for later evaluation"""
+    return lambda llm_model, observable_tag, _, state: func(llm_model, observable_tag, info_str, state) 
+
+
 class ActionsBlob:
     def __init__(self, parent_node: Node):
         self.parent_node = parent_node
+        self.used_inst_list = "observable_actions"
 
-def TaskIdentifyActions(*,observable_tag: str)->ActionsBlob:
+def TaskIdentifyActions(*,observable_tag: str, action_info: str)->ActionsBlob:
     """Obtain the set of actions required for a specific observable
     inputs:
         - observable_tag: An observable_tag for a specific observable
+        - action_info: Any information provided by the user about the *actions* used for this observable (use "" if no information is known)
     outputs:
         - An object describing the actions required for that observable
     """    
-    return ActionsBlob(Node(f"TaskIdentifyActions_{getUniqueIdx()}", identifyActions, node_info=getTaskInfo(currentframe()) ) )
+    return ActionsBlob(Node(f"TaskIdentifyActions_{getUniqueIdx()}", funcWrapInfo(identifyActions, action_info), node_info=getTaskInfo(currentframe()) ) )
 
 class SourcesBlob:
     def __init__(self, parent_node: Node):
         self.parent_node = parent_node
+        self.used_inst_list = "observable_sources"
 
-def TaskIdentifySources(*,observable_tag: str)->SourcesBlob:
+def TaskIdentifySources(*,observable_tag: str, source_info: str)->SourcesBlob:
     """Obtain the set of sources required for a specific observable
     inputs:
         - observable_tag: An observable_tag for a specific observable
+        - source_info: Any information provided by the user about the *sources* used for this observable (use "" if no information is known)        
     outputs:
         - An object describing the sources required for that observable
     """        
-    return SourcesBlob(Node(f"TaskIdentifySources_{getUniqueIdx()}", identifySources) )
+    return SourcesBlob(Node(f"TaskIdentifySources_{getUniqueIdx()}", funcWrapInfo(identifySources, source_info), node_info=getTaskInfo(currentframe()) ) )
 
 class EigenSolversBlob:
     def __init__(self, parent_node: Node):
         self.parent_node = parent_node
+        self.used_inst_list = "observable_eigensolvers"
 
-def TaskIdentifyEigenSolvers(*,observable_tag: str, actions: ActionsBlob)->EigenSolversBlob:
+def TaskIdentifyEigenSolvers(*,observable_tag: str, eigsolver_info: str, actions: ActionsBlob)->EigenSolversBlob:
     """A task to obtain the set of eigensolvers required for a specific observable
     inputs:
-        - An observable_tag for a specific observable
-        - The actions required for that observable
+        - observable_tag: An observable_tag for a specific observable
+        - eigsolver_info: Any information provided by the user about the *eigensolvers* used for this observable (use "" if no information is known)   
+        - actions: The actions required for that observable
     outputs:
         - The eigensolvers required for that observable
     """    
-    return EigenSolversBlob(Node(f"TaskIdentifyEigenSolvers_{getUniqueIdx()}", setupEigenSolvers, [actions], node_info=getTaskInfo(currentframe()) ) )
+    return EigenSolversBlob(Node(f"TaskIdentifyEigenSolvers_{getUniqueIdx()}", funcWrapInfo(setupEigenSolvers, eigsolver_info) , [actions], node_info=getTaskInfo(currentframe()) ) )
 
 class SolversBlob:
     def __init__(self, parent_node: Node):
         self.parent_node = parent_node
+        self.used_inst_list = "observable_solvers"
 
-def TaskIdentifySolvers(*,observable_tag: str, actions: ActionsBlob, eigensolvers: EigenSolversBlob | None)-> SolversBlob:
+def TaskIdentifySolvers(*,observable_tag: str, solver_info: str, actions: ActionsBlob, eigensolvers: EigenSolversBlob | None)-> SolversBlob:
     """A task to obtain the set of solvers required for a specific observable
     inputs:
-      - An observable_tag for a specific observable 
-      - The actions required for that observable
-      - (Optional) The eigenvectors required for that observable
+      - observable_tag: An observable_tag for a specific observable 
+      - solver_info: Any information provided by the user about the *solvers* used for this observable (use "" if no information is known)   
+      - actions: The actions required for that observable
+      - eigensolvers : (Optional) The eigenvectors required for that observable
     outputs:
       - The solvers required for that observable    
     """
-    return SolversBlob(Node(f"TaskIdentifySolvers_{getUniqueIdx()}", identifySolvers, [actions, eigensolvers], node_info=getTaskInfo(currentframe()) ) )
+    return SolversBlob(Node(f"TaskIdentifySolvers_{getUniqueIdx()}", funcWrapInfo(identifySolvers, solver_info), [actions, eigensolvers], node_info=getTaskInfo(currentframe()) ) )
 
 class PropagatorsBlob:
     def __init__(self, parent_node: Node):
         self.parent_node = parent_node
+        self.used_inst_list = "observable_propagators"
 
 def TaskIdentifyPropagators(*,observable_tag: str, sources: SourcesBlob, solvers: SolversBlob)-> PropagatorsBlob:
     """Obtain the set of propagators required for a specific observable
     inputs:
-        - An observable_tag for a specific observable
-        - The solvers required to compute the propagators for this observable
-        - The sources required to compute the propagators for this observable
+        - observable_tag: An observable_tag for a specific observable
+        - sources: The sources required to compute the propagators for this observable
+        - solvers: The solvers required to compute the propagators for this observable        
     outputs:
         - The propagators required to compute that observable
         """
@@ -130,26 +144,25 @@ def TaskIdentifyPropagators(*,observable_tag: str, sources: SourcesBlob, solvers
 class SmearedPropagatorsBlob:
     def __init__(self, parent_node: Node):
         self.parent_node = parent_node
+        self.used_inst_list = "observable_smeared_propagators"
 
-def TaskIdentifySmearedPropagators(*,observable_tag: str, propagators: PropagatorsBlob)-> SmearedPropagatorsBlob:
+def TaskIdentifySmearedPropagators(*,observable_tag: str, smeared_prop_info: str, propagators: PropagatorsBlob)-> SmearedPropagatorsBlob:
     """Obtain the set of smeared propagators required for a specific observable
     inputs:
-        - An observable_tag for a specific observable
-        - The propagators required to compute that observable        
+        - observable_tag: An observable_tag for a specific observable
+        - smeared_prop_info: Any information provided by the user about the *smeared propagators* used for this observable (use "" if no information is known)   
+        - propagators: The propagators required to compute that observable        
     outputs:
         - The smeared propagators required to compute that observable (if any)
     """
-    return SmearedPropagatorsBlob(Node(f"TaskIdentifySmearedPropagators_{getUniqueIdx()}", identifySmearedPropagators, [propagators], node_info=getTaskInfo(currentframe()) ))
+    return SmearedPropagatorsBlob(Node(f"TaskIdentifySmearedPropagators_{getUniqueIdx()}", funcWrapInfo(identifySmearedPropagators, smeared_prop_info), [propagators], node_info=getTaskInfo(currentframe()) ))
 
 class ObservableComputeBlob:
     def __init__(self, parent_node: Node):
         self.parent_node = parent_node
 
-def TaskComputeObservable(*,observable_tag: str, propagators: PropagatorsBlob | None, smeared_propagators: SmearedPropagatorsBlob | None)->ObservableComputeBlob:
-    """Obtain the parameters and details for computing the observable
-    Supports:
-        - Meson two-point functions
-        - Writing propagators to disk
+def TaskComputeMeson2pt(*,observable_tag: str, propagators: PropagatorsBlob | None, smeared_propagators: SmearedPropagatorsBlob | None)->ObservableComputeBlob:
+    """Obtain the parameters and details for computing a meson two-point function observable    
 
     inputs:
         - An observable_tag for a specific observable
@@ -161,11 +174,30 @@ def TaskComputeObservable(*,observable_tag: str, propagators: PropagatorsBlob | 
     outputs:
         - The module instances required to calculate this observable
     """
-    return ObservableComputeBlob(Node(f"TaskComputeObservable_{getUniqueIdx()}", configureObservables, [propagators, smeared_propagators], node_info=getTaskInfo(currentframe()) ))
+    return ObservableComputeBlob(Node(f"TaskComputeMeson2pt_{getUniqueIdx()}", configureMeson2pt, [propagators, smeared_propagators], node_info=getTaskInfo(currentframe()) ))
 
+
+
+# def TaskRecallOutput(*, for_observable_tag: str, from_observable_tag: str, output_type : type):
+#     """Recall the output from a task for a different observable
+# inputs:
+#     - for_observable_tag: The observable tag for the current observable
+#     - from_observable_tag: The observable for which to recall the output
+#     - output_type: The task's output type (e.g. PropagatorsBlob)    
+# """
+    
+#     tmp = output_type(None)
+#     assert hasattr(tmp, "used_inst_list")
+
+#     def fobj(_, obs_tag_out, __, state):
+#         used_inst_list = getattr(state, tmp.used_inst_list)
+#         assert from_observable_tag in used_inst_list
+#         used_inst_list[obs_tag_out] = used_inst_list[from_observable_tag], 
+#     return output_type(Node(f"TaskRecallOutput_{getUniqueIdx()}", fobj, node_info=getTaskInfo(currentframe()) ))
+ 
 
 registry = {  "TaskIdentifyActions" : TaskIdentifyActions, "TaskIdentifySources" : TaskIdentifySources, "TaskIdentifyEigenSolvers" : TaskIdentifyEigenSolvers, "TaskIdentifySolvers" : TaskIdentifySolvers,
-                "TaskIdentifyPropagators" : TaskIdentifyPropagators, "TaskIdentifySmearedPropagators": TaskIdentifySmearedPropagators, "TaskComputeObservable": TaskComputeObservable }
+                "TaskIdentifyPropagators" : TaskIdentifyPropagators, "TaskIdentifySmearedPropagators": TaskIdentifySmearedPropagators, "TaskComputeMeson2pt": TaskComputeMeson2pt }
 
 def function_manifest():
     lines = []
@@ -219,10 +251,19 @@ Code rules
 - Your snippet should only perform the workflow and nothing else. Do not add code to write outputs.
 - Some functions allowing passing in the output of a previous call to this function. Use this to update set of modules in the class for subsequent calls to the function.
 - The last function call in the snippet should be to TaskComputeObservable, and the output ObservableComputeBlob object must be named "result"
+- Some functions have a parameter for supplying information on the module class that was provided by the user. If the user has provided such information either to you or via the "Extra user inputs" below, you must include it in this parameter.
 -------------
 Skill
 -------------
 {obs_instance.obs_type.skill()}
+
+------------------
+Extra user inputs
+------------------
+The user provided the following high-level description of the observables they wish to be computed:
+"
+{query}
+"
 """
 
     user_query_rules = [
@@ -290,4 +331,4 @@ def measConfigAgent(query, llm_model, ckpoint_file="state.json", reload_state=Fa
 
     for o in obs.observables:
         AgentPrint("Constructing workflow for observable ", o.obs_tag)
-        observableWorkflowAgent(o, query, llm_model, state)
+        observableWorkflowAgent(o, state.query, llm_model, state)

@@ -111,8 +111,8 @@ For this observable you must use the action instances described by the following
     
     print("INSTRUCTIONS\n", instructions)
 
-    act, _ = executeCodeAndParse(state.observable_actions[observable_tag], InstanceInfo, f"{observable_tag}_actions") 
-    used_actions = [ a.instance_tag for a in act ]
+    # act, _ = executeCodeAndParse(state.observable_actions[observable_tag], InstanceInfo, f"{observable_tag}_actions") 
+    # used_actions = [ a.instance_tag for a in act ]
 
     def checkAll(solvers):
         for i in range(len(solvers)):
@@ -120,10 +120,10 @@ For this observable you must use the action instances described by the following
                 if solvers[i].action == solvers[j].action and solvers[i].solver_args == solvers[j].solver_args:
                     return (False, f"Action instances {solvers[i].name} and {solvers[j].name} have the same parameters. Solver instances must be unique.")                    
 
-        #Check it only used actions previously described as being associated with this observable (note, this validator is only applied to *new* instances created by the agent)
-        for s in solvers:
-            if s.action not in used_actions:
-                return (False, f"Action {s.action} is not within the list of actions used by this observable")
+        # #Check it only used actions previously described as being associated with this observable (note, this validator is only applied to *new* instances created by the agent)
+        # for s in solvers:
+        #     if s.action not in used_actions:
+        #         return (False, f"Action {s.action} is not within the list of actions used by this observable")
         return (True, "")
     ###################################
 

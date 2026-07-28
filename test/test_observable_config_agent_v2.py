@@ -28,7 +28,7 @@ from femtomeas.meas_config_agent_v2.source_config_models import SourceConfig, Wa
 from femtomeas.meas_config_agent_v2.solver_config_models import SolverConfig, RBPrecCGsolver
 from femtomeas.meas_config_agent_v2.propagator_config_models import PropagatorConfig
 from femtomeas.meas_config_agent_v2.smeared_prop_config_models import SmearedPropagatorConfig, WallSmear
-from femtomeas.meas_config_agent_v2.observable_config import configureObservables
+from femtomeas.meas_config_agent_v2.observable_config import configureMeson2pt
 
 from femtomeas.agent_common.python_update_agent import InstanceInfo
 
@@ -130,7 +130,7 @@ solvers = [ { ", ".join([ str(a.model_dump()) for a in solver_insts ]) } ]
     use_solver_insts = [ InstanceInfo(instance_tag="solv_1", user_info="") ]
     state.observable_solvers = { "pion2pt" :  f"pion2pt_solvers = [{ ", ".join([ str(a.model_dump()) for a in use_solver_insts ] )}]" }
 
-    if 0:
+    if 1:
         print("""#################
         ### TEST 1 BASIC, TWO PROPS THE SAME
         #################
@@ -139,7 +139,7 @@ solvers = [ { ", ".join([ str(a.model_dump()) for a in solver_insts ]) } ]
         #props
         prop_insts = [ PropagatorConfig(name="prop_1", source="wall_1", solver="solv_1") ]
         state.propagators = f"""
-    propagators = [ { ", ".join([ str(a.model_dump()) for a in prop_insts ]) } ]
+propagators = [ { ", ".join([ str(a.model_dump()) for a in prop_insts ]) } ]
     """
         print("PROPS",state.propagators)
 
@@ -149,11 +149,10 @@ solvers = [ { ", ".join([ str(a.model_dump()) for a in solver_insts ]) } ]
         state.smeared_propagators = None
         state.observable_smeared_propagators = None
 
-        invalidate_later_stages = configureObservables(llm, "pion2pt", "", state)
+        configureMeson2pt(llm, "pion2pt", "", state)
         print("OBS", state.observables)
         print("OBS CONFIG", state.observable_observable_configs["pion2pt"])
-        if invalidate_later_stages:
-                print("INVALIDATING LATER STAGES")
+
 
     if 1:
         print("""#################
@@ -178,8 +177,9 @@ smeared_propagators = [ { ", ".join([ str(a.model_dump()) for a in sprop_insts ]
         use_sprop_insts = [ InstanceInfo(instance_tag="sprop_1", user_info="use for both input/output props of the two-point function") ]
         state.observable_smeared_propagators = { "pion2pt" :  f"pion2pt_smeared_propagators = [{ ", ".join([ str(a.model_dump()) for a in use_sprop_insts ] )}]" }
 
-        invalidate_later_stages = configureObservables(llm, "pion2pt", "", state)
+        configureMeson2pt(llm, "pion2pt", "", state)
         print("OBS", state.observables)
         print("OBS CONFIG", state.observable_observable_configs["pion2pt"])
-        if invalidate_later_stages:
-                print("INVALIDATING LATER STAGES")
+
+
+ 

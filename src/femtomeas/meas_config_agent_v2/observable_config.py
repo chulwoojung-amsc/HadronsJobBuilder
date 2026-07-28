@@ -18,8 +18,10 @@ def getMesonGammasTool(op : mesonSpecialKeywords)-> List[Gammas]:
     """Get the list of Gammas (combination of Gamma-matrices in the Euclidean Clifford algebra) associated with a particular meson operator in the list of special meson keywords"""
     return getMesonGammas(op)
 
-def configureObservables(model, observable_tag:str, observable_info:str, state: State):
-    role = """for building a list of lattice QCD observable instances and their associated parameters for a particular tagged set observables. For this set you must instantiate the required number of observable instances and determine their propagators and other parameters."""
+def configureMeson2pt(model, observable_tag:str, observable_info:str, state: State):
+    observable_type = "meson2pt_config"
+    
+    role = f"""for building a list of lattice QCD observable instances and their associated parameters for an observable set with observable type '{observable_type}'. For this set you must instantiate the required number of observable instances and determine their propagators and other parameters."""
 
     parameter_rules = ["""observable_configs:
 
@@ -34,8 +36,7 @@ def configureObservables(model, observable_tag:str, observable_info:str, state: 
   - Do not invent or infer any information not explicitly obtained from the message history.
   - The 'user_info' fields of the propagators and smeared propagators may contain instructions on how to use specific instances; if so, follow those instructions. If not, instantiate ObservableConfig instances for all valid combinations of propagators.
   - You must follow the instructions in the 'user_info' field of *both* the propagators and smeared propagators. This may require instantiating multiple ObservableConfig instances to satisfy both sets of instructions.
-                       
-  Rules for when the ObservableConfig.obs type is Meson2ptConfig:
+                      
   - Create a different instance for each unique combination of propagators
   - Treat the instructions for smeared and unsmeared propagators as applying to separate instances of Meson2ptConfig. 
 """,  
@@ -106,7 +107,10 @@ For this observable you must use the smeared propagator instances described by t
 
     ##############################
 
-    def instanceCheck(obs):
+    def instanceCheck(obs: ObservableConfig):
+        if obs.obs.type != observable_type:
+            return (False, f"Observable 'type' must be {observable_type}")
+        
         return obs.check(state)
 
     input_obs_code = None
@@ -116,7 +120,7 @@ For this observable you must use the smeared propagator instances described by t
     updated_obs_code, obs_obs_code, _ = parameterAgent(model, ObservableConfig, "observable_configs", state.observable_configs, f"{observable_tag}_observables", input_obs_code,\
                                                         role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, input_messages=[ HumanMessage(instructions) ], instance_validator=instanceCheck, user_info_rules=user_info_rules)
 
-    state.observables = updated_obs_code
+    state.observable_configs = updated_obs_code
 
     if state.observable_observable_configs is None:
         state.observable_observable_configs = dict()

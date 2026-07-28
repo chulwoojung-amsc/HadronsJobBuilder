@@ -131,11 +131,69 @@ solvers = [ { ", ".join([ str(a.model_dump()) for a in solver_insts ]) } ]
     use_solver_insts = [ InstanceInfo(instance_tag="solv_1", user_info="") ]
     state.observable_solvers = { "pion2pt" :  f"pion2pt_solvers = [{ ", ".join([ str(a.model_dump()) for a in use_solver_insts ] )}]" }
 
-    invalidate_later_stages = identifyPropagators(llm, "pion2pt", "", state)
-    print("PROPAGATORS", state.propagators)
-    print("OBS PROPAGATORS", state.observable_propagators["pion2pt"])
-    if invalidate_later_stages:
-            print("INVALIDATING LATER STAGES")
+    if 0:
+        print("""###############
+    CHECK IT CORRECTLY IDENTIFIES THE PROPAGATORS FOR THE PION 2PT
+    ##############    
+        """)
+
+        identifyPropagators(llm, "pion2pt", "", state)
+        print("PROPAGATORS", state.propagators)
+        print("OBS PROPAGATORS", state.observable_propagators["pion2pt"])
+
+    state.observables.observables.append( ObservableInfo(obs_type=Meson2ptObs(meson_type="kaon"), obs_tag="kaon2pt") )
+
+
+    if 0:
+        print("""###############
+    CHECK IT IS ABLE TO REUSE SELECTED PROPAGATORS FROM ANOTHER OBSERVABLE
+    ##############    
+        """)
+
+
+        prop_insts = [ PropagatorConfig(name="prop_1", source="wall_1", solver="solv_1") ]
+        state.propagators = f"""
+propagators = [ { ", ".join([ str(a.model_dump()) for a in prop_insts ]) } ]
+    """
+        print("INPUT PROPS",state.propagators)
+        use_prop_insts = [ InstanceInfo(instance_tag="prop_1", user_info="use for both input/output props of the two-point function") ]
+        state.observable_propagators = { "pion2pt" :  f"pion2pt_propagators = [{ ", ".join([ str(a.model_dump()) for a in use_prop_insts ] )}]" }
+
+        identifyPropagators(llm, "kaon2pt", f"""You must use the same setup as for observable "pion2pt":
+{state.observable_propagators["pion2pt"]}          
+""", state)
+        print("PROPAGATORS", state.propagators)
+        print("OBS PROPAGATORS", state.observable_propagators["pion2pt"])
+
+    if 1:
+        print("""###############
+    CHECK IT IS ABLE TO REUSE SELECTED PROPAGATORS FROM ANOTHER OBSERVABLE AND ALSO ADD MORE
+    ##############    
+        """)
+
+        prop_insts = [ PropagatorConfig(name="prop_1", source="wall_1", solver="solv_1") ]
+        state.propagators = f"""
+propagators = [ { ", ".join([ str(a.model_dump()) for a in prop_insts ]) } ]
+    """
+        print("INPUT PROPS",state.propagators)
+        use_prop_insts = [ InstanceInfo(instance_tag="prop_1", user_info="use for both input/output props of the two-point function") ]
+        state.observable_propagators = { "pion2pt" :  f"pion2pt_propagators = [{ ", ".join([ str(a.model_dump()) for a in use_prop_insts ] )}]" }
+
+        ns = SourceConfig(name="wall_2", source=WallSource(timeslice=1) )
+        state.sources = state.sources + f"""
+sources.append({ns.model_dump()})
+"""
+        print("SOURCES",state.sources)
+
+        state.observable_sources["kaon2pt"] =  f"kaon2pt_sources = ['wall_2']"             
+        state.observable_solvers["kaon2pt"] =  f"kaon2pt_solvers = ['solv_1']"
+
+        identifyPropagators(llm, "kaon2pt", f"""You must use the same setup as for observable "pion2pt":
+{state.observable_propagators["pion2pt"]}          
+""", state)
+        print("PROPAGATORS", state.propagators)
+        print("OBS PROPAGATORS", state.observable_propagators["pion2pt"])
+
 
     #sources
     # source_insts
