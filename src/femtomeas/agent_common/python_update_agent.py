@@ -354,6 +354,7 @@ New used-instance code:
     - The code field must contain correct Python inside a string.
     - The code must produce jsonable Python dictionaries according to schema below.
     - Use Python True/False for boolean fields
+    - Use Python None instead of "null"
     - You cannot use any libraries within the code. 
     - The {output_type_name} structure instances must be appended to a list with name '{instantiation_list_name}'. This list must contain ONLY {output_type_name} structures.
     - You must use for loops to iterate over parameter values if there are more than 3 values.
