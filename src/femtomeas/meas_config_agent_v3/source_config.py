@@ -1,13 +1,5 @@
-from langchain_core.messages import BaseMessage
-from langchain.messages import (
-    SystemMessage,
-    HumanMessage,
-    ToolCall,
-    AIMessage
-)
-
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
-from typing import Literal, Union, List, Optional, Tuple
+from typing import Literal, Union, List, Optional, Tuple, ClassVar
 from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 import json
 from femtomeas.agent_common.common import *
@@ -15,6 +7,8 @@ from femtomeas.agent_common.python_update_agent import parameterAgent
 from femtomeas.meas_config_agent.meas_agent_common import Gammas
 from femtomeas.meas_config_agent_v2.source_config_models import SourceConfig, SeqGammaSource
 from .state import State
+from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
+from femtomeas.agent_common.callgraph import Node
 
 def identifySources(model, group_name : str, state : State):
     role = """creating instances of SourceConfig for every propagator source required by the user.
@@ -93,3 +87,27 @@ def identifySources(model, group_name : str, state : State):
                                                             tools=[], parameter_rules=parameter_rules, group_validator=checkAll, instance_validator=instanceCheck,  additional_user_query_rules=additional_user_query_rules, user_info_rules=user_info_rules )
     state.sources = updated_source_code
     return group_source_code
+
+
+class SourceGroupHandle(BaseGroupHandle):
+    pass
+
+class SourceGroup(BaseGroup):
+    handle_type : ClassVar[type] = SourceGroupHandle
+    code: str = Field(..., description="Code for generating the list of source instances in the group")
+
+
+def createSourceGroup(group_name: str)->SourceGroupHandle:
+    def doit(group_name: str):
+        state, llm_model = getCurrentState()
+        #agent builds a group, adding new source instances as needed
+        assert group_name not in state.groups
+        state.groups[group_name] = SourceGroup(code = identifySources( llm_model, group_name, state ))   
+        print("createSourceGroup: ", state.groups[group_name].code,  "\nSources is now: ", state.sources)    
+        return group_name
+
+    checkValidNewGroupName(group_name)
+    return SourceGroupHandle(group_name, Node(f"createSourceGroup_{getUniqueIdx()}", lambda: doit(group_name) ) )
+
+registerWorkflowOperation(createSourceGroup)
+addReservedName("sources")

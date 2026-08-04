@@ -1,13 +1,5 @@
-from langchain_core.messages import BaseMessage
-from langchain.messages import (
-    SystemMessage,
-    HumanMessage,
-    ToolCall,
-    AIMessage
-)
-import json
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
-from typing import Literal, Union, List, Optional, Tuple
+from typing import Literal, Union, List, Optional, Tuple, ClassVar
 from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from langchain.agents import create_agent
 from femtomeas.agent_common.common import *
@@ -16,6 +8,9 @@ from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceI
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
 from femtomeas.meas_config_agent_v2.solver_config_models import SolverConfig
 from .state import State
+from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
+from femtomeas.agent_common.callgraph import Node
+from .action_config import ActionGroup, ActionGroupHandle
     
 def identifySolvers(model, group_name: str, action_group_name: str,  action_group_code: str, state: State):    
     role = f"""identifying the lattice QCD solver instances required by user. Solvers invert the QCD Dirac operator for a particular action instance. A solver instance has a set of parameters such as stopping conditions and the maximum number of iterations. The instance also has an 'action' field, that must be set to the name of one of the action instances identified previously.
@@ -98,3 +93,25 @@ You must adhere to the following rules for generating solver instances:
     state.solvers = updated_solver_code
     return group_solver_code
     
+
+class SolverGroupHandle(BaseGroupHandle):
+    pass
+
+class SolverGroup(BaseGroup):
+    handle_type : ClassVar[type] = SolverGroupHandle
+    code: str = Field(..., description="Code for generating the list of solver instances in the group")
+   
+def createSolverGroup(group_name: str, actions: ActionGroupHandle)->SolverGroupHandle:
+    checkValidNewGroupName(group_name)
+    def doit(group_name, gactions_group_name: str):
+        state, llm_model = getCurrentState()
+        assert gactions_group_name in state.groups and isinstance(state.groups[gactions_group_name], ActionGroup)
+
+        state.groups[group_name] = SolverGroup(code = identifySolvers(llm_model, group_name, gactions_group_name, state.groups[gactions_group_name].code, state ))   
+        print("createSolverGroup: ", state.groups[group_name].code,  "\nSolvers is now: ", state.solvers)   
+        return group_name
+   
+    return SolverGroupHandle(group_name, Node(f"createSolverGroup_{getUniqueIdx()}", lambda gactions: doit(group_name, gactions), input_deps=[actions] ) )
+
+registerWorkflowOperation(createSolverGroup)
+addReservedName("solvers")

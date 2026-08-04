@@ -1,19 +1,14 @@
-from langchain_core.messages import BaseMessage
-from langchain.messages import (
-    SystemMessage,
-    HumanMessage,
-    ToolCall,
-    AIMessage
-)
-
 from typing import Literal, Union, List, Optional, Tuple
+from typing import Tuple, TypeVar, ClassVar, Callable
 import xml.etree.ElementTree as ET
 from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 
 from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_update_agent import parameterAgent
+from femtomeas.agent_common.callgraph import Node
 from femtomeas.meas_config_agent_v2.action_config_models import ActionConfig
 from .state import State
+from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
 
 def identifyActions(model, group_name:str, state: State):
     role = """identifying all lattice QCD action instances required by the user.
@@ -47,3 +42,26 @@ The rules for identifying the required action instances are:
 
     state.actions = updated_action_code
     return group_action_code
+
+
+class ActionGroupHandle(BaseGroupHandle):
+    pass
+
+class ActionGroup(BaseGroup):
+    handle_type : ClassVar[type] = ActionGroupHandle
+    code: str = Field(..., description="Code for generating the list of action instances in the group")
+
+def createActionGroup(group_name: str)->ActionGroupHandle:
+    def doit(group_name: str):
+        state, llm_model = getCurrentState()
+        #agent builds a group, adding new action instances as needed
+        assert group_name not in state.groups
+        state.groups[group_name] = ActionGroup(code = identifyActions(llm_model, group_name, state )    ) 
+        print("createActionGroup: ", state.groups[group_name].code,  "\nActions is now: ", state.actions)   
+        return group_name
+
+    checkValidNewGroupName(group_name)
+    return ActionGroupHandle(group_name, Node(f"createActionGroup_{getUniqueIdx()}", lambda: doit(group_name) ) )
+
+registerWorkflowOperation(createActionGroup)
+addReservedName("actions")

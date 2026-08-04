@@ -1,9 +1,18 @@
+from femtomeas.meas_config_agent_v3.agent_workflows import *
 from femtomeas.meas_config_agent_v3.agent import *
 from femtomeas.meas_config_agent_v2.action_config_models import DWFaction, ActionConfig
 from femtomeas.agent_common.python_update_agent import InstanceInfo
 from femtomeas.meas_config_agent_v2.source_config_models import SourceConfig, PointSource, WallSource
 from femtomeas.meas_config_agent_v2.solver_config_models import RBPrecCGsolver, SolverConfig
 from femtomeas.meas_config_agent_v2.propagator_config_models import PropagatorConfig
+from femtomeas.meas_config_agent_v2.smeared_prop_config_models import SmearedPropagatorConfig, WallSmear
+
+from femtomeas.meas_config_agent_v3.action_config import createActionGroup, ActionGroup
+from femtomeas.meas_config_agent_v3.solver_config import createSolverGroup, SolverGroup
+from femtomeas.meas_config_agent_v3.source_config import createSourceGroup, SourceGroup
+from femtomeas.meas_config_agent_v3.propagator_config import createPropagatorGroup, PropagatorGroup
+from femtomeas.meas_config_agent_v3.observable_config import createMeson2ptGroup
+from femtomeas.meas_config_agent_v3.smeared_prop_config import createSmearedPropagatorGroup, SmearedPropagatorGroup
 
 def subWorkflowAgent(llm_model):
     role = f"""creating a code snippet that performs the instructions provided by the user during your conversation.
@@ -103,6 +112,9 @@ if __name__ == "__main__":
         api_key = readI2APIkey(config.agent.i2api_key_path)
     )
 
+    if 0:
+        print(function_manifest())
+
     def testEnactor(func, args):
         print("ENACTING ",func.__name__, args)
         return func(*args)
@@ -160,7 +172,7 @@ solvers = [ {solv_insts[0].model_dump()} ]
         graph = prop_h.parent_node
         graph.eval(enactor=testEnactor)
 
-    if 1:
+    if 0:
         #Test meson2pt agent
         state = State()
         prop_insts = [ PropagatorConfig(name="prop_wall_t32", source="wall_src_t32", solver="solver"),   PropagatorConfig(name="prop_wall_t0", source="wall_src_t0", solver="solver")     ]
@@ -178,3 +190,44 @@ propagators = [ {prop_insts[0].model_dump()},  {prop_insts[1].model_dump()}  ]
         graph.eval(enactor=testEnactor)
 
 
+    if 0:
+        #Test smeared propagator agent
+        state = State()
+        prop_insts = [ PropagatorConfig(name="prop_wall_t32", source="wall_src_t32", solver="solver"),   PropagatorConfig(name="prop_wall_t0", source="wall_src_t0", solver="solver")     ]
+        state.propagators = f"""
+propagators = [ {prop_insts[0].model_dump()},  {prop_insts[1].model_dump()}  ]
+"""         
+        state.groups["prop_group"] = PropagatorGroup(code = f"prop_group = [ {InstanceInfo(instance_tag="prop_wall_t32", user_info="").model_dump() },  {InstanceInfo(instance_tag="prop_wall_t0", user_info="").model_dump() }  ]")
+
+        initializeState(amsc_llm_0t, state)
+
+        prop_h = retrieveGroupHandle("prop_group")
+        sprop_h = createSmearedPropagatorGroup("sprop_group",prop_h)
+
+        graph = sprop_h.parent_node
+        graph.eval(enactor=testEnactor)
+
+
+    if 1:
+        #Test meson2pt agent with smeared props
+        state = State()
+        prop_insts = [ PropagatorConfig(name="prop_wall_t32", source="wall_src_t32", solver="solver"),   PropagatorConfig(name="prop_wall_t0", source="wall_src_t0", solver="solver")     ]
+        state.propagators = f"""
+propagators = [ {prop_insts[0].model_dump()},  {prop_insts[1].model_dump()}  ]
+"""     
+        sprop_insts = [ SmearedPropagatorConfig(name="sprop_w32", input_prop="prop_wall_t32", smearing=WallSmear(momentum=(0,0,0,0))),
+                       SmearedPropagatorConfig(name="sprop_w0", input_prop="prop_wall_t0", smearing=WallSmear(momentum=(0,0,0,0))),
+                         ]
+        state.smeared_propagators = f"""
+smeared_propagators = [ {sprop_insts[0].model_dump()},  {sprop_insts[1].model_dump()}  ]
+"""     
+
+        state.groups["sprop_group"] = SmearedPropagatorGroup(code = f"sprop_group = [ {InstanceInfo(instance_tag="sprop_w32", user_info="").model_dump() },  {InstanceInfo(instance_tag="sprop_w0", user_info="").model_dump() }  ]")
+
+        initializeState(amsc_llm_0t, state)
+
+        prop_h = retrieveGroupHandle("sprop_group")
+        meson_h = createMeson2ptGroup("meson2pt_group",prop_h)
+
+        graph = meson_h.parent_node
+        graph.eval(enactor=testEnactor)        

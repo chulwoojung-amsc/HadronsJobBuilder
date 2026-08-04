@@ -1,18 +1,14 @@
-from langchain_core.messages import BaseMessage
-from langchain.messages import (
-    SystemMessage,
-    HumanMessage,
-    ToolCall,
-    AIMessage
-)
-from typing import Literal, Union, List, Optional, Tuple
+from typing import Literal, Union, List, Optional, Tuple, ClassVar
 from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo
 from femtomeas.meas_config_agent.meas_agent_common import Gammas
-from femtomeas.meas_config_agent_v2.observable_config_models import ObservableConfig, getMesonGammas, mesonSpecialKeywords
+from femtomeas.meas_config_agent_v2.observable_config_models import ObservableConfig, getMesonGammas, mesonSpecialKeywords, ContractionSinkNone
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
 from .state import State
-
+from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
+from femtomeas.agent_common.callgraph import Node
+from .propagator_config import PropagatorGroupHandle, PropagatorGroup
+from .smeared_prop_config import SmearedPropagatorGroupHandle, SmearedPropagatorGroup
 
 @tool
 def getMesonGammasTool(op : mesonSpecialKeywords)-> List[Gammas]:
@@ -21,6 +17,29 @@ def getMesonGammasTool(op : mesonSpecialKeywords)-> List[Gammas]:
 
 def configureMeson2pt(model, group_name: str, prop_group_name:str, state: State):
     prop_group_code = state.groups[prop_group_name].code
+    is_smeared = isinstance(state.groups[prop_group_name], SmearedPropagatorGroup)
+
+    #=====================
+    if is_smeared:
+        prop_info = f"""
+  - You are restricted to using smeared propagators from the following subset:
+  {prop_group_code}
+        
+  where the complete set of smeared propagators is defined through the following Python code:
+  {state.smeared_propagators}
+
+  and the corresponding base propagators are defined through
+  {state.propagators}
+"""
+    else:
+        prop_info = f""" 
+  - You are restricted to using propagators from the following subset:
+    {prop_group_code}
+
+    where the complete set of propagators is defined through the following Python code:
+    {state.propagators}
+"""
+  #==========================
     
     role = f"""for building a collection of meson two-point function observable instances and their associated parameters based on your conversation with the user.
 
@@ -29,12 +48,7 @@ def configureMeson2pt(model, group_name: str, prop_group_name:str, state: State)
   This observable requires two propagators, that are contracted together at some timeslice-localized sink. The first propagator argument has quark flow from source to sink, and the second propagator argument has gamma^5-hermiticity applied to it such that the quark flow is from sink to source. We often refer to these propagators by the direction of quark flow into the vertex, i.e. "incoming" for the first quark and "outgoing" for the second.
 
   Pion and kaon correlators are both pseudoscalar two-point functions, the difference being that the pion usually has both quarks with the same (light) mass, whereas the kaon has one heavy and one light quark.
-  
-  - You are restricted to using propagators from the following subset:
-    {prop_group_code}
-
-    where the complete set of propagators is defined through the following Python code:
-    {state.propagators}
+  {prop_info}
     
   - Ask the user to specify which combinations of propagators to use from within the subset above.
 
@@ -59,8 +73,8 @@ ObservableConfig instances rules
   - You MUST ensure the order of the two propagators in the Tuple matches the role of the two quarks. For example, if the user says "prop_1" should be used as the first (or incoming) quark, ensure it is the first entry.
   """,
 
-    """Meson2ptInstance.sink:
-  - You must use ContractionSinkPoint for this parameter"""
+    f"""Meson2ptInstance.sink:
+  - You must use {"ContractionSinkPoint" if not is_smeared else "ContractionSinkNone"} for this parameter"""
                        
     """Meson2ptConfig.sink_gammas and Meson2ptConfig.source_gammas:
   - These are lists of Gamma-matrix combinations for the sink and source locations, respectively.
@@ -89,6 +103,10 @@ ObservableConfig instances rules
             return (False, f"Observable 'type' must be 'meson2pt_config'")
         if obs.obs.propagators[0] not in used_props or obs.obs.propagators[1] not in used_props:
             return (False, f"You must only use propagators from within the provided subset")
+        if is_smeared and not isinstance(obs.obs.sink, ContractionSinkNone):
+            return (False, f"You must use sink=ContractionSinkNone for smeared propagators")
+        if not is_smeared and isinstance(obs.obs.sink, ContractionSinkNone):
+            return (False, f"You must not use sink=ContractionSinkNone for unsmeared propagators")
         
         return obs.check(state)
 
@@ -102,3 +120,27 @@ ObservableConfig instances rules
 
     state.observable_configs = updated_obs_code
     return obs_group_code
+
+
+class ObservableGroupHandle(BaseGroupHandle):
+    pass
+
+class Meson2ptGroup(BaseGroup):
+    handle_type : ClassVar[type] = ObservableGroupHandle
+    code: str = Field(..., description="Code for generating the list of meson 2pt function instances in the group")
+
+def createMeson2ptGroup(group_name: str, propagators: PropagatorGroupHandle | SmearedPropagatorGroupHandle)->ObservableGroupHandle:
+    """Create a Meson2ptGroup and return its handle
+
+The meson two-point function (aka meson correlator) is used to describe the lattice propagation of a meson such as a pion or kaon        
+    """
+    checkValidNewGroupName(group_name)
+    def doit(group_name, gprops_group_name: str): 
+        state, llm_model = getCurrentState()
+        assert gprops_group_name in state.groups and isinstance(state.groups[gprops_group_name], (PropagatorGroup, SmearedPropagatorGroup) )
+        state.groups[group_name] = Meson2ptGroup(code = configureMeson2pt(llm_model, group_name, gprops_group_name, state) )
+        return group_name
+   
+    return ObservableGroupHandle(group_name, Node(f"createMeson2ptGroup_{getUniqueIdx()}", lambda gprops: doit(group_name, gprops), input_deps=[propagators] ) )
+
+registerWorkflowOperation(createMeson2ptGroup)

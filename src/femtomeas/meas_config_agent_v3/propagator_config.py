@@ -1,13 +1,6 @@
-from langchain_core.messages import BaseMessage
-from langchain.messages import (
-    SystemMessage,
-    HumanMessage,
-    ToolCall,
-    AIMessage
-)
 import json
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
-from typing import Literal, Union, List, Optional, Tuple
+from typing import Literal, Union, List, Optional, Tuple, ClassVar
 from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from femtomeas.agent_common.common import *
 from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
@@ -15,6 +8,10 @@ from femtomeas.agent_common.python_output_agent import executeCodeAndParse
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo
 from femtomeas.meas_config_agent_v2.propagator_config_models import PropagatorConfig
 from .state import State
+from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
+from femtomeas.agent_common.callgraph import Node
+from .source_config import SourceGroup, SourceGroupHandle
+from .solver_config import SolverGroup, SolverGroupHandle
 
 def identifyPropagators(model, group_name, source_group_name, solver_group_name, state: State): 
     source_group_code = state.groups[source_group_name].code
@@ -97,3 +94,29 @@ Propagator instance rules
 
     state.propagators = updated_prop_code
     return group_prop_code
+
+
+
+class PropagatorGroupHandle(BaseGroupHandle):
+    pass
+
+class PropagatorGroup(BaseGroup):
+    handle_type : ClassVar[type] = PropagatorGroupHandle
+    code: str = Field(..., description="Code for generating the list of propagator instances in the group")
+
+    
+def createPropagatorGroup(group_name: str, sources: SourceGroupHandle, solvers: SolverGroupHandle)->PropagatorGroupHandle:
+    checkValidNewGroupName(group_name)
+
+    def doit(group_name, gsources_group_name: str, gsolvers_group_name: str):
+        state, llm_model = getCurrentState()
+        assert gsources_group_name in state.groups and isinstance(state.groups[gsources_group_name], SourceGroup)
+        assert gsolvers_group_name in state.groups and isinstance(state.groups[gsolvers_group_name], SolverGroup)
+
+        state.groups[group_name] = PropagatorGroup(code = identifyPropagators(llm_model, group_name, gsources_group_name, gsolvers_group_name, state) )
+        return group_name
+   
+    return PropagatorGroupHandle(group_name, Node(f"createPropagatorGroup_{getUniqueIdx()}", lambda gsources, gsolvers: doit(group_name, gsources, gsolvers), input_deps=[sources,solvers] ) )
+
+registerWorkflowOperation(createPropagatorGroup)
+addReservedName("propagators")
