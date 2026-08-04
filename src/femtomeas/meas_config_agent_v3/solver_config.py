@@ -6,13 +6,41 @@ from femtomeas.agent_common.common import *
 from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
-from femtomeas.meas_config_agent_v2.solver_config_models import SolverConfig
+from femtomeas.meas_config_agent_v2.solver_config_models import SolverConfig, RBPrecCGsolver
 from .state import State
 from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
 from femtomeas.agent_common.callgraph import Node
 from .action_config import ActionGroup, ActionGroupHandle
+from .eigenvectors import EigenSolverGroup, EigenSolverGroupHandle
     
-def identifySolvers(model, group_name: str, action_group_name: str,  action_group_code: str, state: State):    
+def identifySolvers(model, group_name: str, action_group_name: str,  eigensolver_group_name : str | None, state: State):    
+    action_group_code = state.groups[action_group_name].code
+
+    use_evecs = eigensolver_group_name is not None
+
+    #Guesser
+    guesser_directions = """RBPrecCGsolver.guesser: Set this parameter to an empty string."""
+
+    if use_evecs:
+        guesser_directions = f"""RBPrecCGsolver.guesser: This parameter currently supports using previously-computed eigenvectors to accelerate the solver
+
+      You must use the following workflow:
+   1) Check if any eigensolver instance within the following list exists with the same action name as this solver instance:
+      {state.groups[eigensolver_group_name].code}
+ 
+      Where the complete set of eigensolver instances is defined through the following Python code:
+      {state.eigensolvers}
+   
+   2) If no, set guesser to an empty string and terminate this workflow.
+      If yes,
+      2a) ask the user to confirm whether to use these specific eigenvectors for the guesser parameter of this solver.
+      2b) if they confirm, use the eigensolver's "name" parameter for the "guesser" parameter.
+          if they do not confirm, use an empty string.
+   Do not ask the user in general whether they would like to use eigenvectors if available. Only ask them to confirm the use of a specific set of eigenvectors for a specific solver."""
+
+    ###############
+
+
     role = f"""identifying the lattice QCD solver instances required by user. Solvers invert the QCD Dirac operator for a particular action instance. A solver instance has a set of parameters such as stopping conditions and the maximum number of iterations. The instance also has an 'action' field, that must be set to the name of one of the action instances identified previously.
 
 - Your job is to help the user choose the solver and its parameters for one or more actions in the following subset:
@@ -49,20 +77,8 @@ You must adhere to the following rules for generating solver instances:
   - The tag should include the action name and enough of the parameter values to uniquely distinguish it among the other solver instances, prefering shorter tags if possible.""",
 
   #guesser
-      """RBPrecCGsolver.guesser: Set this parameter to an empty string."""      
+      guesser_directions 
       ]
-
-#TODO: Support eigenvectors
-# This parameter currently supports using previously-computed eigenvectors to accelerate the solver
-
-#       You must use the following workflow:
-#    1) Check if any eigensolver instance exists with the same action name as this solver instance.
-#    2) If no, set guesser to an empty string and terminate this workflow.
-#       If yes,
-#       2a) ask the user to confirm whether to use these specific eigenvectors for the guesser parameter of this solver.
-#       2b) if they confirm, use the eigensolver's "name" parameter for the "guesser" parameter.
-#           if they do not confirm, use an empty string.
-#    Do not ask the user in general whether they would like to use eigenvectors if available. Only ask them to confirm the use of a specific set of eigenvectors for a specific solver."""
 
     additional_user_query_rules = [        
     ]
@@ -72,6 +88,11 @@ You must adhere to the following rules for generating solver instances:
 
     act, _ = executeCodeAndParse(action_group_code, InstanceInfo, action_group_name) 
     used_actions = [ a.instance_tag for a in act ]
+
+    used_eigsol = [""]
+    if use_evecs:
+        esol, _ = executeCodeAndParse(state.groups[eigensolver_group_name].code, InstanceInfo, eigensolver_group_name) 
+        used_eigsol = used_eigsol + [ a.instance_tag for a in esol ]
 
     def checkAll(solvers):
         for i in range(len(solvers)):
@@ -83,6 +104,9 @@ You must adhere to the following rules for generating solver instances:
         for s in solvers:
             if s.action not in used_actions:
                 return (False, f"Action {s.action} is not within the provided subset of actions associated with this group")
+            if isinstance(s.solver_args, RBPrecCGsolver) and s.solver_args.guesser not in used_eigsol:
+                return (False, f"Action {s.guesser} is not within the provided subset of eigensolvers associated with this group")
+            
         return (True, "")
     ###################################
 
@@ -101,17 +125,23 @@ class SolverGroup(BaseGroup):
     handle_type : ClassVar[type] = SolverGroupHandle
     code: str = Field(..., description="Code for generating the list of solver instances in the group")
    
-def createSolverGroup(group_name: str, actions: ActionGroupHandle)->SolverGroupHandle:
+def createSolverGroup(group_name: str, actions: ActionGroupHandle, eigensolver: None | EigenSolverGroupHandle = None)->SolverGroupHandle:
     checkValidNewGroupName(group_name)
-    def doit(group_name, gactions_group_name: str):
+    def doit(group_name, gactions_group_name: str, geigensolver_group_name : str | None):
         state, llm_model = getCurrentState()
         assert gactions_group_name in state.groups and isinstance(state.groups[gactions_group_name], ActionGroup)
 
-        state.groups[group_name] = SolverGroup(code = identifySolvers(llm_model, group_name, gactions_group_name, state.groups[gactions_group_name].code, state ))   
+        if geigensolver_group_name is not None:
+            assert geigensolver_group_name in state.groups and isinstance(state.groups[geigensolver_group_name], EigenSolverGroup)
+
+        state.groups[group_name] = SolverGroup(code = identifySolvers(llm_model, group_name, gactions_group_name, geigensolver_group_name, state ))   
         print("createSolverGroup: ", state.groups[group_name].code,  "\nSolvers is now: ", state.solvers)   
         return group_name
-   
-    return SolverGroupHandle(group_name, Node(f"createSolverGroup_{getUniqueIdx()}", lambda gactions: doit(group_name, gactions), input_deps=[actions] ) )
+
+    if eigensolver is None:
+        return SolverGroupHandle(group_name, Node(f"createSolverGroup_{getUniqueIdx()}", lambda gactions: doit(group_name, gactions, None), input_deps=[actions] ) )
+    else:
+        return SolverGroupHandle(group_name, Node(f"createSolverGroup_{getUniqueIdx()}", lambda gactions, geigens: doit(group_name, gactions, geigens), input_deps=[actions, eigensolver] ) )
 
 registerWorkflowOperation(createSolverGroup)
 addReservedName("solvers")

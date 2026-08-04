@@ -6,6 +6,7 @@ from femtomeas.meas_config_agent_v2.source_config_models import SourceConfig, Po
 from femtomeas.meas_config_agent_v2.solver_config_models import RBPrecCGsolver, SolverConfig
 from femtomeas.meas_config_agent_v2.propagator_config_models import PropagatorConfig
 from femtomeas.meas_config_agent_v2.smeared_prop_config_models import SmearedPropagatorConfig, WallSmear
+from femtomeas.meas_config_agent_v2.eigenvectors_models import EigenSolverConfig, LanczosEigenSolver, ChebyParams
 
 from femtomeas.meas_config_agent_v3.action_config import createActionGroup, ActionGroup
 from femtomeas.meas_config_agent_v3.solver_config import createSolverGroup, SolverGroup
@@ -13,6 +14,7 @@ from femtomeas.meas_config_agent_v3.source_config import createSourceGroup, Sour
 from femtomeas.meas_config_agent_v3.propagator_config import createPropagatorGroup, PropagatorGroup
 from femtomeas.meas_config_agent_v3.observable_config import createMeson2ptGroup
 from femtomeas.meas_config_agent_v3.smeared_prop_config import createSmearedPropagatorGroup, SmearedPropagatorGroup
+from femtomeas.meas_config_agent_v3.eigenvectors import createEigenSolverGroup, EigenSolverGroup
 
 def subWorkflowAgent(llm_model):
     role = f"""creating a code snippet that performs the instructions provided by the user during your conversation.
@@ -136,6 +138,7 @@ actions = [ {action_inst.model_dump()} ]
         graph = sg1_h.parent_node
         graph.eval(enactor=testEnactor)
 
+
     if 0:
         #Test source agent
         state = State()
@@ -208,7 +211,7 @@ propagators = [ {prop_insts[0].model_dump()},  {prop_insts[1].model_dump()}  ]
         graph.eval(enactor=testEnactor)
 
 
-    if 1:
+    if 0:
         #Test meson2pt agent with smeared props
         state = State()
         prop_insts = [ PropagatorConfig(name="prop_wall_t32", source="wall_src_t32", solver="solver"),   PropagatorConfig(name="prop_wall_t0", source="wall_src_t0", solver="solver")     ]
@@ -230,4 +233,47 @@ smeared_propagators = [ {sprop_insts[0].model_dump()},  {sprop_insts[1].model_du
         meson_h = createMeson2ptGroup("meson2pt_group",prop_h)
 
         graph = meson_h.parent_node
+        graph.eval(enactor=testEnactor)        
+
+
+    if 0:
+        #Test eigensolver agent
+        state = State()
+        action_inst = ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) )
+        state.actions = f"""
+actions = [ {action_inst.model_dump()} ]
+"""         
+        state.groups["agroup1"] = ActionGroup(code = f"agroup1 = [{InstanceInfo(instance_tag="action_inst", user_info="").model_dump() } ]")
+
+        initializeState(amsc_llm_0t, state)
+
+        ag1_h = retrieveGroupHandle("agroup1")
+        sg1_h = createEigenSolverGroup("sgroup1", ag1_h)
+            
+        graph = sg1_h.parent_node
+        graph.eval(enactor=testEnactor)        
+
+
+    if 1:
+        #Test solver agent with eigenvectors
+        state = State()
+        action_inst = ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) )
+        state.actions = f"""
+actions = [ {action_inst.model_dump()} ]
+"""         
+        state.groups["agroup1"] = ActionGroup(code = f"agroup1 = [{InstanceInfo(instance_tag="action_inst", user_info="").model_dump() } ]")
+
+        evec_inst = EigenSolverConfig(name="esol1", action="action_inst", solver_args=LanczosEigenSolver(cheby=ChebyParams(alpha=0.01,beta=3.2,Npoly=101), Nstop=100, Nk=100, Nextra=10, resid=1e-7, MaxIt=20, storeEvecs=False, fileStem="" ))
+        state.eigensolvers = f"""
+eigensolvers = [ {evec_inst.model_dump()} ]
+"""         
+        state.groups["egroup1"] = EigenSolverGroup(code = f"egroup1 = [{InstanceInfo(instance_tag="esol1", user_info="").model_dump() } ]")        
+
+        initializeState(amsc_llm_0t, state)
+
+        ag1_h = retrieveGroupHandle("agroup1")
+        eg1_h = retrieveGroupHandle("egroup1")
+        sg1_h = createSolverGroup("sgroup1", ag1_h, eg1_h)
+            
+        graph = sg1_h.parent_node
         graph.eval(enactor=testEnactor)        

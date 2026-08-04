@@ -8,6 +8,7 @@ class State:
         self.actions = None #Code for generating action instances
         self.solvers = None
         self.sources = None
+        self.eigensolvers = None
         self.propagators = None
         self.smeared_propagators = None
         self.observable_configs = None
@@ -65,5 +66,17 @@ class State:
 
         for p in smeared_props:
             if p["name"] == sprop_name:
+                return True
+        return False
+
+    def isValidAction(self, action_name):
+        r, e = executeCode(self.actions)
+        if len(e) > 0:
+            raise Exception(f"Executing code gave the following exceptions: {e}")
+        assert "actions" in r.keys()
+        actions = r["actions"]
+
+        for p in actions:
+            if p["name"] == action_name:
                 return True
         return False
