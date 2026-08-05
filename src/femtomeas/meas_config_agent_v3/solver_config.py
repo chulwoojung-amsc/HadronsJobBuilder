@@ -29,7 +29,7 @@ def identifySolvers(model, group_name: str, action_group_name: str,  eigensolver
       {state.groups[eigensolver_group_name].code}
  
       Where the complete set of eigensolver instances is defined through the following Python code:
-      {state.eigensolvers}
+      {state.instances["eigensolvers"]}
    
    2) If no, set guesser to an empty string and terminate this workflow.
       If yes,
@@ -47,7 +47,7 @@ def identifySolvers(model, group_name: str, action_group_name: str,  eigensolver
 {action_group_code}
 
 where the parameters of the actions are defined through the following Python code:
-{state.actions}
+{state.instances["actions"]}
 
 - Ask for the solver type before asking about or mentioning the parameters of that solver. If there is only one supported solver you may assume this response and skip this question; however you must explain this to the user.
 
@@ -109,12 +109,12 @@ You must adhere to the following rules for generating solver instances:
             
         return (True, "")
     ###################################
+    
+    inst = state.getInstanceCode("solvers")
 
-    print("SOLVERCONFIG ROLE", role)
-
-    updated_solver_code, group_solver_code, _ = parameterAgent(model, SolverConfig, "solvers", state.solvers, group_name, None, role, tools=[], \
+    updated_solver_code, group_solver_code, _ = parameterAgent(model, SolverConfig, "solvers", inst.value, group_name, None, role, tools=[], \
                                                             parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=checkAll, additional_user_query_rules=additional_user_query_rules)
-    state.solvers = updated_solver_code
+    inst.value = updated_solver_code
     return group_solver_code
     
 
@@ -135,7 +135,7 @@ def createSolverGroup(group_name: str, actions: ActionGroupHandle, eigensolver: 
             assert geigensolver_group_name in state.groups and isinstance(state.groups[geigensolver_group_name], EigenSolverGroup)
 
         state.groups[group_name] = SolverGroup(code = identifySolvers(llm_model, group_name, gactions_group_name, geigensolver_group_name, state ))   
-        print("createSolverGroup: ", state.groups[group_name].code,  "\nSolvers is now: ", state.solvers)   
+        print("createSolverGroup: ", state.groups[group_name].code,  "\nSolvers is now: ", state.instances["solvers"])   
         return group_name
 
     if eigensolver is None:

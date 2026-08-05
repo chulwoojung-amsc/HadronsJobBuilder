@@ -26,10 +26,10 @@ def configureMeson2pt(model, group_name: str, prop_group_name:str, state: State)
   {prop_group_code}
         
   where the complete set of smeared propagators is defined through the following Python code:
-  {state.smeared_propagators}
+  {state.instances["smeared_propagators"]}
 
   and the corresponding base propagators are defined through
-  {state.propagators}
+  {state.instances["propagators"]}
 """
     else:
         prop_info = f""" 
@@ -37,7 +37,7 @@ def configureMeson2pt(model, group_name: str, prop_group_name:str, state: State)
     {prop_group_code}
 
     where the complete set of propagators is defined through the following Python code:
-    {state.propagators}
+    {state.instances["propagators"]}
 """
   #==========================
     
@@ -114,11 +114,13 @@ ObservableConfig instances rules
       """When asking for the meson or observable type, you MUST list the meson types you know about (pion, kaon etc) but ALSO mention that the user can directly specify the gamma matrices.""",
       """NEVER insist that the user answer your question in a specific format or ordering."""
     ]
+
+    inst = state.getInstanceCode("observable_configs")
     
-    updated_obs_code, obs_group_code, _ = parameterAgent(model, ObservableConfig, "observable_configs", state.observable_configs, group_name, None,\
+    updated_obs_code, obs_group_code, _ = parameterAgent(model, ObservableConfig, "observable_configs", inst.value, group_name, None,\
                                                         role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, instance_validator=instanceCheck, user_info_rules=user_info_rules, additional_user_query_rules=additional_user_query_rules)
 
-    state.observable_configs = updated_obs_code
+    inst.value = updated_obs_code
     return obs_group_code
 
 

@@ -20,7 +20,7 @@ def identifySmearedPropagators(model, group_name: str, input_props_group_name:st
     {input_props_group_code}
 
     - The complete set of unsmeared input propagators is defined by the following Python code:
-    {state.propagators}
+    {state.instances["propagators"]}
 
     ---------------------------------------
     Rules for smeared propagator instances
@@ -59,11 +59,12 @@ def identifySmearedPropagators(model, group_name: str, input_props_group_name:st
             return (False, "Input propagators are restricted to the provided subset")
         return (True,"")
     
+    inst = state.getInstanceCode("smeared_propagators")
 
-    updated_sprop_code, group_sprop_code, _ = parameterAgent(model, SmearedPropagatorConfig, "smeared_propagators", state.smeared_propagators, group_name, None, \
+    updated_sprop_code, group_sprop_code, _ = parameterAgent(model, SmearedPropagatorConfig, "smeared_propagators", inst.value, group_name, None, \
                                                             role, tools=[], parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=checkAll, instance_validator=instanceCheck )        
 
-    state.smeared_propagators = updated_sprop_code
+    inst.value = updated_sprop_code
     return group_sprop_code
 
 

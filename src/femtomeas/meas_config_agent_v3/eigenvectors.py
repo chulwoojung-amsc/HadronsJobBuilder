@@ -18,7 +18,7 @@ def identifyEigenSolvers(model, group_name: str, action_group_name: str,  state:
     {action_group_code}
 
     where the complete set of actions is defined with the following Python code:
-    {state.actions}
+    {state.instances["actions"]}
 
     Refer to the following information about the solvers. Disregard any information you think you know that contradicts this:
         - LanczosEigenSolver
@@ -68,9 +68,11 @@ def identifyEigenSolvers(model, group_name: str, action_group_name: str,  state:
                     return (False, f"Eigensolver {eig[i].name} is the same as {eig[j].name}. Eigensolvers must be unique")
         return (True,"")    
 
-    updated_eig_code, group_eig_code, _ = parameterAgent(model, EigenSolverConfig, "eigensolvers", state.eigensolvers, group_name, None, \
+    inst = state.getInstanceCode("eigensolvers")
+
+    updated_eig_code, group_eig_code, _ = parameterAgent(model, EigenSolverConfig, "eigensolvers", inst.value, group_name, None, \
                                                         role, tools=[], tool_rules=[], parameter_rules=parameter_rules, additional_user_query_rules=additional_user_query_rules, instance_validator=check, group_validator=groupCheck, user_info_rules=user_info_rules)
-    state.eigensolvers = updated_eig_code
+    inst.value = updated_eig_code
     return group_eig_code
 
 class EigenSolverGroupHandle(BaseGroupHandle):
@@ -87,7 +89,7 @@ def createEigenSolverGroup(group_name: str, actions: ActionGroupHandle)->EigenSo
         assert gactions_group_name in state.groups and isinstance(state.groups[gactions_group_name], ActionGroup)
 
         state.groups[group_name] = EigenSolverGroup(code = identifyEigenSolvers(llm_model, group_name, gactions_group_name, state ))   
-        print("createEigenSolverGroup: ", state.groups[group_name].code,  "\nEigensolvers is now: ", state.eigensolvers)   
+        print("createEigenSolverGroup: ", state.groups[group_name].code,  "\nEigensolvers is now: ", state.instances["eigensolvers"])   
         return group_name
    
     return EigenSolverGroupHandle(group_name, Node(f"createEigenSolverGroup_{getUniqueIdx()}", lambda gactions: doit(group_name, gactions), input_deps=[actions] ) )

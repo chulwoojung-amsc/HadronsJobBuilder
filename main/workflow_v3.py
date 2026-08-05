@@ -1,6 +1,7 @@
 import os
 from langchain_openai import ChatOpenAI
 from femtomeas.meas_config_agent_v3.agent import measConfigAgent
+from femtomeas.meas_config_agent_v3.state import reloadStateCheckpoint, State
 from femtomeas.workflow_manager.manager_config import readManagerConfigFile, setupManager
 from femtomeas.workflow_manager.manager import JobManager
 from femtomeas.workflow_manager.hadrons_workflow import hadronsSubmissionAgent
@@ -110,14 +111,17 @@ if __name__ == "__main__":
     #llm = nemotron
     #llm = oss_20b
     
-    reload_checkpoint_file = args.reload_checkpoint if args.reload_checkpoint is not None else "ckpoint_state.json" #NB: argparse default argument (const) is only used if the arg is specified but a value not provided, not when the arg is not specified
-    reload_checkpoint = args.reload_checkpoint is not None and os.path.exists(reload_checkpoint_file)
+    #Always checkpoint, but overwrite input checkpoint file if reloading and continuing
+    checkpoint_file = args.reload_checkpoint if args.reload_checkpoint is not None else "ckpoint_state.json" #NB: argparse default argument (const) is only used if the arg is specified but a value not provided, not when the arg is not specified
+    reload_checkpoint = args.reload_checkpoint is not None and os.path.exists(checkpoint_file)
 
     write_xml_file = args.write_xml
     write_xml = args.write_xml is not None
    
-    if not args.skip_agent:        
-        state = measConfigAgent(llm)
+    if not args.skip_agent:
+        state = measConfigAgent(llm, 
+                                input_state=reloadStateCheckpoint(checkpoint_file) if reload_checkpoint else None,
+                                checkpoint_state=(True, checkpoint_file)  )
        
         # if write_xml:
         #     state.toHadronsXML().write(write_xml_file)  #note, if the XML uses non-local files it cannot be used directly

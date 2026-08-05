@@ -37,10 +37,12 @@ The rules for identifying the required action instances are:
                     return (False, f"Action instances {actions[i].name} and {actions[j].name} have the same parameters. Action instances must be unique.")
         return (True, "")
 
-    updated_action_code, group_action_code, _ = parameterAgent(model, ActionConfig, "actions", state.actions, group_name, None, role, tools=[], \
+    inst = state.getInstanceCode("actions")
+    
+    updated_action_code, group_action_code, _ = parameterAgent(model, ActionConfig, "actions", inst.value, group_name, None, role, tools=[], \
                                                            tool_rules=[], parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=group_validate)
 
-    state.actions = updated_action_code
+    inst.value = updated_action_code
     return group_action_code
 
 
@@ -57,7 +59,7 @@ def createActionGroup(group_name: str)->ActionGroupHandle:
         #agent builds a group, adding new action instances as needed
         assert group_name not in state.groups
         state.groups[group_name] = ActionGroup(code = identifyActions(llm_model, group_name, state )    ) 
-        print("createActionGroup: ", state.groups[group_name].code,  "\nActions is now: ", state.actions)   
+        print("createActionGroup: ", state.groups[group_name].code,  "\nActions is now: ", state.instances["actions"])   
         return group_name
 
     checkValidNewGroupName(group_name)

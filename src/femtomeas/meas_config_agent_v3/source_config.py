@@ -82,10 +82,11 @@ def identifySources(model, group_name : str, state : State):
 
     user_info_rules = """- You must use an empty string for this field."""
 
+    inst = state.getInstanceCode("sources")
     
-    updated_source_code, group_source_code, _ = parameterAgent(model, SourceConfig, "sources", state.sources, group_name, None, role, \
+    updated_source_code, group_source_code, _ = parameterAgent(model, SourceConfig, "sources", inst.value, group_name, None, role, \
                                                             tools=[], parameter_rules=parameter_rules, group_validator=checkAll, instance_validator=instanceCheck,  additional_user_query_rules=additional_user_query_rules, user_info_rules=user_info_rules )
-    state.sources = updated_source_code
+    inst.value = updated_source_code
     return group_source_code
 
 
@@ -103,7 +104,7 @@ def createSourceGroup(group_name: str)->SourceGroupHandle:
         #agent builds a group, adding new source instances as needed
         assert group_name not in state.groups
         state.groups[group_name] = SourceGroup(code = identifySources( llm_model, group_name, state ))   
-        print("createSourceGroup: ", state.groups[group_name].code,  "\nSources is now: ", state.sources)    
+        print("createSourceGroup: ", state.groups[group_name].code,  "\nSources is now: ", state.instances["sources"])    
         return group_name
 
     checkValidNewGroupName(group_name)

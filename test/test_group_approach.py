@@ -16,6 +16,9 @@ from femtomeas.meas_config_agent_v3.observable_config import createMeson2ptGroup
 from femtomeas.meas_config_agent_v3.smeared_prop_config import createSmearedPropagatorGroup, SmearedPropagatorGroup
 from femtomeas.meas_config_agent_v3.eigenvectors import createEigenSolverGroup, EigenSolverGroup
 
+from femtomeas.meas_config_agent_v3.state import State, reloadStateCheckpoint, checkpointState
+import os
+
 def subWorkflowAgent(llm_model):
     role = f"""creating a code snippet that performs the instructions provided by the user during your conversation.
 
@@ -100,6 +103,16 @@ Tool usage
     workflow_name = AgentInput("Provide a name for this workflow")
     state.workflows[workflow_name] = (graphs, obj.code)
 
+def encodeInstances(list_name, inst):
+    if not isinstance(inst, list):
+        return encodeInstances(list_name, [inst])
+    return f"{list_name} = [" + ", ".join([ str(a.model_dump()) for a in inst ] ) + "]"    
+
+def encodeGroup(list_name, names):
+    if not isinstance(names, list):
+        return encodeGroup(list_name, [names])
+    return encodeInstances(list_name, [ InstanceInfo(instance_tag=n, user_info="") for n in names ])
+
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:
@@ -115,20 +128,46 @@ if __name__ == "__main__":
     )
 
     if 0:
+        #Test the function manifest includes all the agent actions
         print(function_manifest())
+
+    if 0:
+        #Test state serialization
+        state = State()
+        state.instances["actions"] = encodeInstances("actions", ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ) )
+        state.groups["agroup1"] = ActionGroup(code = encodeGroup("agroup1", "action_inst"))
+
+        state.instances["sources"] = encodeInstances("sources", [ SourceConfig(name="wall_0", source=WallSource(timeslice=0, momentum=(0,0,0,0)) ),  SourceConfig(name="point_0", source=PointSource(location=(0,0,0,0)) )   ])            
+        state.groups["source_group"] = SourceGroup(code = encodeGroup("source_group", ["wall_0", "point_0"]) )
+
+        fn = "test_state.json"
+        if os.path.exists(fn):
+            os.remove(fn)
+        checkpointState(state, fn)
+
+        rstate = reloadStateCheckpoint(fn)
+
+        assert "actions" in rstate.instances
+        assert rstate.instances["actions"] == state.instances["actions"]
+        assert "agroup1" in rstate.groups and isinstance(rstate.groups["agroup1"], ActionGroup)
+        assert rstate.groups["agroup1"].code == state.groups["agroup1"].code
+
+        assert "sources" in rstate.instances
+        assert rstate.instances["sources"] == state.instances["sources"]
+        assert "source_group" in rstate.groups and isinstance(rstate.groups["source_group"], SourceGroup)
+        assert rstate.groups["source_group"].code == state.groups["source_group"].code
+
+
 
     def testEnactor(func, args):
         print("ENACTING ",func.__name__, args)
         return func(*args)
 
-    if 0:
+    if 1:
         #Test solver agent
         state = State()
-        action_inst = ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) )
-        state.actions = f"""
-actions = [ {action_inst.model_dump()} ]
-"""         
-        state.groups["agroup1"] = ActionGroup(code = f"agroup1 = [{InstanceInfo(instance_tag="action_inst", user_info="").model_dump() } ]")
+        state.instances["actions"] = encodeInstances("actions", ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ) )
+        state.groups["agroup1"] = ActionGroup(code = encodeGroup("agroup1", "action_inst"))
 
         initializeState(amsc_llm_0t, state)
 
@@ -153,18 +192,10 @@ actions = [ {action_inst.model_dump()} ]
     if 0:
         #Test propagator agent
         state = State()
-        source_insts = [ SourceConfig(name="wall_0", source=WallSource(timeslice=0, momentum=(0,0,0,0)) ),  SourceConfig(name="point_0", source=PointSource(location=(0,0,0,0)) )   ]
-        state.sources = f"""
-sources = [ {source_insts[0].model_dump()},  {source_insts[1].model_dump()}  ]
-"""         
-        state.groups["source_group"] = SourceGroup(code = f"source_group = [ {InstanceInfo(instance_tag="wall_0", user_info="").model_dump() },  {InstanceInfo(instance_tag="point_0", user_info="").model_dump() }  ]")
-
-        solv_insts = [ SolverConfig(name="solv", solver_args=RBPrecCGsolver(residual=1e-8,maxIteration=10000,guesser=""), action="action_1")]
-        state.solvers = f"""
-solvers = [ {solv_insts[0].model_dump()} ]
-"""         
-        state.groups["solver_group"] = SolverGroup(code = f"solver_group = [ {InstanceInfo(instance_tag="solv", user_info="").model_dump() } ]")
-
+        state.instances["sources"] = encodeInstances("sources", [ SourceConfig(name="wall_0", source=WallSource(timeslice=0, momentum=(0,0,0,0)) ),  SourceConfig(name="point_0", source=PointSource(location=(0,0,0,0)) )   ])            
+        state.groups["source_group"] = SourceGroup(code = encodeGroup("source_group", ["wall_0", "point_0"]) )
+        state.instances["solvers"] = encodeInstances("solvers", [ SolverConfig(name="solv", solver_args=RBPrecCGsolver(residual=1e-8,maxIteration=10000,guesser=""), action="action_1")] )    
+        state.groups["solver_group"] = SolverGroup(code = encodeGroup("solver_group", "solv") )
 
         initializeState(amsc_llm_0t, state)
 
@@ -178,11 +209,8 @@ solvers = [ {solv_insts[0].model_dump()} ]
     if 0:
         #Test meson2pt agent
         state = State()
-        prop_insts = [ PropagatorConfig(name="prop_wall_t32", source="wall_src_t32", solver="solver"),   PropagatorConfig(name="prop_wall_t0", source="wall_src_t0", solver="solver")     ]
-        state.propagators = f"""
-propagators = [ {prop_insts[0].model_dump()},  {prop_insts[1].model_dump()}  ]
-"""         
-        state.groups["prop_group"] = PropagatorGroup(code = f"prop_group = [ {InstanceInfo(instance_tag="prop_wall_t32", user_info="").model_dump() },  {InstanceInfo(instance_tag="prop_wall_t0", user_info="").model_dump() }  ]")
+        state.instances["propagators"] = encodeInstances("propagators",  [ PropagatorConfig(name="prop_wall_t32", source="wall_src_t32", solver="solver"),   PropagatorConfig(name="prop_wall_t0", source="wall_src_t0", solver="solver")     ]  )
+        state.groups["prop_group"] = PropagatorGroup(code = encodeGroup("prop_group", ["prop_wall_t32", "prop_wall_t0"]) )
 
         initializeState(amsc_llm_0t, state)
 
@@ -196,11 +224,9 @@ propagators = [ {prop_insts[0].model_dump()},  {prop_insts[1].model_dump()}  ]
     if 0:
         #Test smeared propagator agent
         state = State()
-        prop_insts = [ PropagatorConfig(name="prop_wall_t32", source="wall_src_t32", solver="solver"),   PropagatorConfig(name="prop_wall_t0", source="wall_src_t0", solver="solver")     ]
-        state.propagators = f"""
-propagators = [ {prop_insts[0].model_dump()},  {prop_insts[1].model_dump()}  ]
-"""         
-        state.groups["prop_group"] = PropagatorGroup(code = f"prop_group = [ {InstanceInfo(instance_tag="prop_wall_t32", user_info="").model_dump() },  {InstanceInfo(instance_tag="prop_wall_t0", user_info="").model_dump() }  ]")
+        
+        state.instances["propagators"] = encodeInstances("propagators", [ PropagatorConfig(name="prop_wall_t32", source="wall_src_t32", solver="solver"),   PropagatorConfig(name="prop_wall_t0", source="wall_src_t0", solver="solver")     ])    
+        state.groups["prop_group"] = PropagatorGroup(code = encodeGroup("prop_group", ["prop_wall_t32", "prop_wall_t0" ]) )
 
         initializeState(amsc_llm_0t, state)
 
@@ -213,20 +239,13 @@ propagators = [ {prop_insts[0].model_dump()},  {prop_insts[1].model_dump()}  ]
 
     if 0:
         #Test meson2pt agent with smeared props
-        state = State()
-        prop_insts = [ PropagatorConfig(name="prop_wall_t32", source="wall_src_t32", solver="solver"),   PropagatorConfig(name="prop_wall_t0", source="wall_src_t0", solver="solver")     ]
-        state.propagators = f"""
-propagators = [ {prop_insts[0].model_dump()},  {prop_insts[1].model_dump()}  ]
-"""     
-        sprop_insts = [ SmearedPropagatorConfig(name="sprop_w32", input_prop="prop_wall_t32", smearing=WallSmear(momentum=(0,0,0,0))),
+        state = State()        
+        state.instances["propagators"]  = encodeInstances("propagators", [ PropagatorConfig(name="prop_wall_t32", source="wall_src_t32", solver="solver"),   PropagatorConfig(name="prop_wall_t0", source="wall_src_t0", solver="solver")     ])        
+        state.instances["smeared_propagators"] = encodeInstances("smeared_propagators", [ SmearedPropagatorConfig(name="sprop_w32", input_prop="prop_wall_t32", smearing=WallSmear(momentum=(0,0,0,0))),
                        SmearedPropagatorConfig(name="sprop_w0", input_prop="prop_wall_t0", smearing=WallSmear(momentum=(0,0,0,0))),
-                         ]
-        state.smeared_propagators = f"""
-smeared_propagators = [ {sprop_insts[0].model_dump()},  {sprop_insts[1].model_dump()}  ]
-"""     
-
-        state.groups["sprop_group"] = SmearedPropagatorGroup(code = f"sprop_group = [ {InstanceInfo(instance_tag="sprop_w32", user_info="").model_dump() },  {InstanceInfo(instance_tag="sprop_w0", user_info="").model_dump() }  ]")
-
+                         ])
+        state.groups["sprop_group"] = SmearedPropagatorGroup(code = encodeGroup("sprop_group", ["sprop_w32", "sprop_w0"]) )
+                                                             
         initializeState(amsc_llm_0t, state)
 
         prop_h = retrieveGroupHandle("sprop_group")
@@ -238,12 +257,9 @@ smeared_propagators = [ {sprop_insts[0].model_dump()},  {sprop_insts[1].model_du
 
     if 0:
         #Test eigensolver agent
-        state = State()
-        action_inst = ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) )
-        state.actions = f"""
-actions = [ {action_inst.model_dump()} ]
-"""         
-        state.groups["agroup1"] = ActionGroup(code = f"agroup1 = [{InstanceInfo(instance_tag="action_inst", user_info="").model_dump() } ]")
+        state = State()        
+        state.instances["actions"] = encodeInstances("actions", ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ))
+        state.groups["agroup1"] = ActionGroup(code = encodeGroup("agroup1", "action_inst"))
 
         initializeState(amsc_llm_0t, state)
 
@@ -254,20 +270,15 @@ actions = [ {action_inst.model_dump()} ]
         graph.eval(enactor=testEnactor)        
 
 
-    if 1:
+    if 0:
         #Test solver agent with eigenvectors
         state = State()
-        action_inst = ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) )
-        state.actions = f"""
-actions = [ {action_inst.model_dump()} ]
-"""         
-        state.groups["agroup1"] = ActionGroup(code = f"agroup1 = [{InstanceInfo(instance_tag="action_inst", user_info="").model_dump() } ]")
-
-        evec_inst = EigenSolverConfig(name="esol1", action="action_inst", solver_args=LanczosEigenSolver(cheby=ChebyParams(alpha=0.01,beta=3.2,Npoly=101), Nstop=100, Nk=100, Nextra=10, resid=1e-7, MaxIt=20, storeEvecs=False, fileStem="" ))
-        state.eigensolvers = f"""
-eigensolvers = [ {evec_inst.model_dump()} ]
-"""         
-        state.groups["egroup1"] = EigenSolverGroup(code = f"egroup1 = [{InstanceInfo(instance_tag="esol1", user_info="").model_dump() } ]")        
+        
+        state.instances["actions"] = encodeInstances("actions", ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ))    
+        state.groups["agroup1"] = ActionGroup(code = encodeGroup("agroup1", "action_inst") )
+       
+        state.instances["eigensolvers"] = encodeInstances("eigensolvers",  EigenSolverConfig(name="esol1", action="action_inst", solver_args=LanczosEigenSolver(cheby=ChebyParams(alpha=0.01,beta=3.2,Npoly=101), Nstop=100, Nk=100, Nextra=10, resid=1e-7, MaxIt=20, storeEvecs=False, fileStem="" ))  )
+        state.groups["egroup1"] = EigenSolverGroup(code = encodeGroup("egroup1", "esol1"))
 
         initializeState(amsc_llm_0t, state)
 

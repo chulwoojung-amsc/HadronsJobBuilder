@@ -1,25 +1,15 @@
 from pydantic import BaseModel, Field
 from typing import Tuple, TypeVar, ClassVar, Callable
 from inspect import signature, getdoc, currentframe
-from femtomeas.agent_common.callgraph import Node
+from .agent_workflow_base import BaseGroup, BaseGroupHandle, GroupTypes, GroupHandleTypes
 from .state import State
+
 
 counter = 0 #for unique indexing of graph nodes
 def getUniqueIdx():
     global counter
     counter += 1
     return counter - 1
-
-class BaseGroupHandle:
-    def __init__(self, group_name : str, parent_node : Node):
-        self.group_name = group_name
-        self.parent_node = parent_node
-
-class BaseGroup(BaseModel):
-    pass
-
-GroupHandleTypes = TypeVar("GroupHandleTypes", bound=BaseGroupHandle)
-GroupTypes = TypeVar("GroupTypes", bound=BaseGroup)
 
 registry = []
 

@@ -23,13 +23,13 @@ def identifyPropagators(model, group_name, source_group_name, solver_group_name,
 {source_group_code}
 
 where the source parameters are defined through the following Python code:
-{state.sources}
+{state.instances["sources"]}
 
 - The solvers must be chosen from within the following subset:
 {solver_group_code}
 
 where the solver parameters are defined through the following Python code:
-{state.solvers}
+{state.instances["solvers"]}
 
 - Ask the user to specify which combinations of source and solver they wish to generate propagator instances for.
 
@@ -49,9 +49,9 @@ Propagator instance rules
 
 
     def instanceCheck(prop):
-        if not state.isValidSource(prop.source):
+        if not state.isValidInstance(prop.source, "sources"):
             return (False, f"\n-Source instance '{prop.source}' does not exist")        
-        if not state.isValidSolver(prop.solver):
+        if not state.isValidInstance(prop.solver, "solvers"):
             return (False, f"\n-Solver instance '{prop.solver}' does not exist")
         if prop.source not in used_sources:
             return (False, f"\n-Source instance '{prop.source}' is not within the subset source instances associated with this group")
@@ -88,11 +88,12 @@ Propagator instance rules
     ]
 
     ##############################
+    inst = state.getInstanceCode("propagators")
 
-    updated_prop_code, group_prop_code, _ = parameterAgent(model, PropagatorConfig, "propagators", state.propagators, group_name, None, role, parameter_rules=parameter_rules, tools=[],
+    updated_prop_code, group_prop_code, _ = parameterAgent(model, PropagatorConfig, "propagators", inst.value, group_name, None, role, parameter_rules=parameter_rules, tools=[],
                                                         user_info_rules = user_info_rules, instance_validator=instanceCheck, group_validator=groupCheck, additional_user_query_rules=additional_user_query_rules)
 
-    state.propagators = updated_prop_code
+    inst.value = updated_prop_code
     return group_prop_code
 
 

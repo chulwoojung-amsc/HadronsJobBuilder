@@ -37,7 +37,7 @@ import sys
 from femtomeas.workflow_manager.manager_config import readManagerConfigFile
 from langchain_openai import ChatOpenAI
 from femtomeas.agent_common.agent_config import readI2APIkey
-from .state import State
+from .state import State, checkpointState
 from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState, function_manifest, GroupTypes, GroupHandleTypes, reserved_names, initializeState, registry
 from femtomeas.agent_common.callgraph import Node
 
@@ -107,42 +107,22 @@ registerWorkflowOperation(retrieveGroupHandle)
 
 
 @tool
-def listGroupHandles(group_type: GroupTypes)->List[str] | None:
-    """List the existing group names for the given group type
-    Return: A list of strings containing any group names with the provided type or None if no groups exist
+def listGroupHandles()->List[Tuple[str,str] ] | None:
+    """List the existing group names and their corresponding handle types
+    Return: A list of tuples containing the group name and group handle type, None if no groups exist
     """
     state, _ = getCurrentState()
-    print("CALLING LISTGROUPHANDLES ", group_type)
-    print("EXISTING ", [(k,type(v).__name__) for k,v in state.groups.items() ])
-
-    ret = [k for k,v in state.groups.items() if type(v).__name__ == group_type ] #   isinstance(v, handle_type)
-    print(ret)
+    ret = [(k, type(v).__name__) for k,v in state.groups.items()]
+    print("LISTGROUPHANDLES", ret)
     return ret if len(ret) > 0 else None
-
-@tool
-def listWorkflows()->List[str] | None:    
-    """Obtain the list of existing workflows by name. Returns None if no workflows currently exist."""
-    state, _ = getCurrentState()
-    print("LISTWORKFLOWS", list(state.workflows.keys()))
-    return list(state.workflows.keys()) if len(state.workflows) > 0 else None
-
-@tool
-def retrieveWorkflowCode(workflow_name: str)->str:    
-    """Retrieve the code snippet associated with an existing workflow
-    workflow_name: Must be a valid workflow name obtained from listWorkflows or otherwise
-    """
-    state, _ = getCurrentState()
-    print("RETRIEVEWORKFLOWCODE ",workflow_name)
-    assert workflow_name in state.workflows
-    return state.workflows[workflow_name][1]
-
-
 
 class AgentOutput(BaseModel):
     code: str = Field(..., description="Python code for performing the required steps")
 
 
-def subWorkflowAgent(llm_model, input_state=None):
+def subWorkflowAgent(llm_model, checkpoint_state: Tuple[bool, str] = (False, "")  ):
+    do_checkpoint, checkpoint_file = checkpoint_state
+
     role = f"""creating a code snippet that performs the instructions provided by the user during your conversation.
 
 When you begin your workflow, ask the user for instructions.
@@ -190,8 +170,6 @@ The following group names are reserved and cannot be used: f{reserved_names}
     def printCode(obj):
         return prettyPrintPydantic(obj.code)
 
-    initializeState(llm_model, input_state)
-
     graphs = None
     
     def validator(obj):
@@ -225,19 +203,33 @@ The following group names are reserved and cannot be used: f{reserved_names}
         graphs = [ h.parent_node for h in aeval.symtable['results'] ]
         return True, ""
 
-    obj = parameterAgent(llm_model, AgentOutput, role, tools=[listGroupHandles,listWorkflows, retrieveWorkflowCode], additional_user_query_rules=user_query_rules, human_validation_output_formatter=printCode, validator=validator)
+    tools=[listGroupHandles]
+    obj = parameterAgent(llm_model, AgentOutput, role, tools=tools, additional_user_query_rules=user_query_rules, human_validation_output_formatter=printCode, validator=validator)
 
     assert graphs is not None
     cache={}
     #Evaluate all output handles with caching in case they are branches from the same chain
 
+    #enactor ensures checkpointing after every node
+    def enactor(f, a): 
+        ret = f(*a)
+        if do_checkpoint:
+            state, _ = getCurrentState()
+            checkpointState(state, checkpoint_file)
+        return ret
+
     for g in graphs:
-        g.evalWithCache(cache)
+        g.evalWithCache(cache, enactor=enactor)
 
-    workflow_name = AgentInput("Provide a name for this workflow")
-    state, _ = getCurrentState()
-    state.workflows[workflow_name] = (graphs, obj.code)
+def measConfigAgent(llm_model, 
+                    input_state : State | None =None, 
+                    checkpoint_state: Tuple[bool, str] = (False, "")  )->State:
+    """
+    checkpoint_state: Tuple ( True/False indicating whether to checkpoint,   filename )
+    """
+    initializeState(llm_model, input_state)
 
-def measConfigAgent(llm_model):
-    while True:
-        subWorkflowAgent(llm_model)
+    do_continue = True
+    while do_continue:
+        subWorkflowAgent(llm_model, checkpoint_state)
+        do_continue = queryYesNo("Would you like to create any more workflow stages?")
