@@ -27,7 +27,7 @@ class DatasetConfig(_AgentFriendly):
     Nt: int = Field(..., description="Temporal extent of the lattice")
     Nbin: int = Field(1, description="Number of consecutive measurements averaged into one sample (binning)")
     i_fit: List[int] = Field(..., description="Operator (column) indices included in the fit")
-    op_names: List[str] = Field(default_factory=list, description="Operator labels for plots, one per column; auto-generated if empty")
+    op_names: List[str] = Field(default_factory=list, description="Operator labels for plots. Either one per data column (length Nop) or one per fitted operator in i_fit order (length len(i_fit)); auto-generated if empty")
     tmin_default: int = Field(3, description="Default fit-range lower bound for all operators")
     tmax_default: int = Field(25, description="Default fit-range upper bound for all operators")
     tmin_overrides: dict[int, int] = Field(default_factory=dict, description="Per-operator tmin, keyed by operator index")

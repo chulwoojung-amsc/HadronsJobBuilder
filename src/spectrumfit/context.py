@@ -32,12 +32,27 @@ class FitContext:
         print(f'Nsample={self.Nsample}, Nt={self.Nt}, Nop={self.Nop}')
 
         self.i_fit = list(ds.i_fit)
-        if ds.op_names:
+        #Auto labels, one per column. Plots index op_names by absolute column
+        #index, so op_names must always be length Nop here.
+        auto_names = ([f'{snk}-{src}' for snk, src in xml_channels] if xml_channels
+                      else [f'op {i}' for i in range(self.Nop)])
+        if not ds.op_names:
+            self.op_names = auto_names
+        elif len(ds.op_names) == self.Nop:
+            #Per-column labels.
             self.op_names = list(ds.op_names)
-        elif xml_channels:
-            self.op_names = [f'{snk}-{src}' for snk, src in xml_channels]
+        elif len(ds.op_names) == len(self.i_fit):
+            #Per-fitted-operator labels, given in i_fit order: scatter them into a
+            #full per-column list so plots (which index by column) pick them up.
+            self.op_names = list(auto_names)
+            for pos, col in enumerate(self.i_fit):
+                if 0 <= col < self.Nop:
+                    self.op_names[col] = ds.op_names[pos]
         else:
-            self.op_names = [f'op {i}' for i in range(self.Nop)]
+            print(f'WARNING op_names has {len(ds.op_names)} entries, but the dataset '
+                  f'has {self.Nop} columns and {len(self.i_fit)} fitted operators; '
+                  f'expected one of those two lengths. Using auto labels.')
+            self.op_names = auto_names
         self.tmin = {op: ds.tmin_default for op in range(self.Nop)}
         self.tmax = {op: ds.tmax_default for op in range(self.Nop)}
         self.tmin.update(ds.tmin_overrides)
