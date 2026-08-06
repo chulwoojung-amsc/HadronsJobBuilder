@@ -29,7 +29,8 @@ FULL_INFO = (
     "Fit the pion two-point correlator from the Hadrons XML output in "
     "/home/chulwoo/Claude/hadrons_jobs/pion_16c_sdcc. Auto-discover the single "
     "observable, so leave the data file name empty. Nt is 16 with no binning "
-    "(Nbin=1). Fit operator column index 0 only, over the time range tmin=2 to "
+    "(Nbin=1). Fit operator column index 0 only, and label that operator 'pion'. "
+    "Use the time range tmin=2 to "
     "tmax=7. Use 2 normal exponential states and 0 alternating-sign states with "
     "the analytic backend. Put the covariance on the raw correlator, jackknife "
     "inner and bootstrap outer resampling, 20 outer bootstrap samples, "
@@ -47,6 +48,7 @@ RULES = [
      "leave it empty to auto-discover the single observable"),
     (["binning", "nbin"], "1"),
     (["temporal extent", "value of nt", "confirm nt", "what nt", "nt="], "16"),
+    (["label", "op_names", "operator name", "name the operator"], "pion"),
     (["which operator", "operator column", "operator indices", "i_fit", "columns to include"], "0"),
     (["time-range", "time range", "fit range", "tmin", "tmax", "range of time"], "tmin 2, tmax 7"),
     (["alternating"], "0"),

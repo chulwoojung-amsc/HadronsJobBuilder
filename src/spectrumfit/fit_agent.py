@@ -84,7 +84,7 @@ def _dataset_stage(model, messages):
         """Nt: Use the Nt reported by peekDataset. For hadrons_xml it is unambiguous; for flat_text confirm the intended value against the consistent-Nt list peekDataset prints.""",
         """Nbin: The number of consecutive measurements averaged into one sample. Default 1; suggest that.""",
         """i_fit: The operator column indices to include in the fit. peekDataset reports how many are available; for a single-channel dataset this is [0].""",
-        """op_names: Never ask for these; leave the list empty. They are auto-generated, and for hadrons_xml taken from the gamma channels.""",
+        """op_names: Optional plot labels. Suggest leaving this empty, in which case labels are auto-generated (for hadrons_xml from the gamma channels). If the user wants to name operators, accept either one label per fitted operator in the same order as i_fit (the usual choice), or one label per data column. Do not press for them; a single question offering the empty default is enough.""",
         """tmin_default, tmax_default: Ask for the fit time-range once (not one bound at a time). Defaults tmin=3, tmax=25.""",
         """tmin_overrides, tmax_overrides: Per-operator exceptions keyed by operator index. Default empty; only fill if the user asks.""",
     ]
