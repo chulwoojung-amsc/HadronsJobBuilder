@@ -6,6 +6,11 @@ import json
 from femtomeas.agent_common.common import Print
 from femtomeas.meas_config_agent.gauge import GaugeFieldConfig
 from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+from pathlib import Path
+
+def get_import_line(obj):
+    cls = obj if isinstance(obj, type) else type(obj)
+    return f"from {cls.__module__} import {cls.__qualname__}"
 
 #Map of instance class string to type
 instance_class_registry = {}
@@ -83,6 +88,49 @@ class State(BaseModel):
         self.gauge.setXMLsingle(xml,job_index,override_path)
         return xml
 
+    def toXMLgeneratorCodeStream(self, stream):
+        #Import modules containing models
+        for instance_class in self.instances.keys():
+            assert instance_class in instance_class_registry
+            cls = instance_class_registry[instance_class]
+            stream.write(get_import_line(cls)+ '\n')
+
+        #Setup and start
+        stream.write(f"""import sys
+from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+from femtomeas.meas_config_agent.gauge import GaugeFieldConfig
+
+xml = HadronsXML()
+xml.setRunID(1234)        
+        
+""")
+
+        #Output instance code
+        for instance_class, instance_code in self.instances.items():
+            cls = instance_class_registry[instance_class]
+            stream.write(instance_code)
+            stream.write(f"""
+for item in {instance_class}:
+    rm = {cls.__name__}.model_validate(item)
+    rm.setXML(xml)
+""")
+
+        #GaugeConfig
+        stream.write(f"""
+{"gauge = " + str(self.gauge.model_dump())}
+rm = GaugeFieldConfig.model_validate(gauge)
+rm.setXML(xml)        
+""")
+
+    def toXMLgeneratorCode(self, output_file):
+        assert Path(output_file).suffix.lower() == ".py"        
+        with open(output_file, 'w') as f:
+            self.toXMLgeneratorCodeStream(f)
+            f.write("""
+if len(sys.argv) == 0:
+    raise Exception("Require the XML filename")
+xml.write(sys.argv[1])
+""")                                        
     
 
 def checkpointState(state, filename):
