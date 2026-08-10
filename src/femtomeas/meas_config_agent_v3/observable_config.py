@@ -4,11 +4,13 @@ from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceI
 from femtomeas.meas_config_agent.meas_agent_common import Gammas
 from femtomeas.meas_config_agent_v2.observable_config_models import ObservableConfig, getMesonGammas, mesonSpecialKeywords, ContractionSinkNone
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
-from .state import State
+from .state import State, registerInstanceClass
 from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
 from femtomeas.agent_common.callgraph import Node
 from .propagator_config import PropagatorGroupHandle, PropagatorGroup
 from .smeared_prop_config import SmearedPropagatorGroupHandle, SmearedPropagatorGroup
+
+registerInstanceClass("observable_configs", ObservableConfig)
 
 @tool
 def getMesonGammasTool(op : mesonSpecialKeywords)-> List[Gammas]:

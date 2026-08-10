@@ -40,6 +40,7 @@ from femtomeas.agent_common.agent_config import readI2APIkey
 from .state import State, checkpointState
 from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState, function_manifest, GroupTypes, GroupHandleTypes, reserved_names, initializeState, registry
 from femtomeas.agent_common.callgraph import Node
+from femtomeas.meas_config_agent.gauge import identifyGaugeConfigs
 
 #Ensure you import all modules that define agent actions here so that they are registered
 from . import action_config
@@ -233,3 +234,7 @@ def measConfigAgent(llm_model,
     while do_continue:
         subWorkflowAgent(llm_model, checkpoint_state)
         do_continue = queryYesNo("Would you like to create any more workflow stages?")
+
+    #Finally, obtain the gauge configurations on which to perform the workflow
+    state, _ = getCurrentState()
+    state.gauge = identifyGaugeConfigs(llm_model, [])

@@ -1,11 +1,13 @@
 from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo, executeCodeAndParse
 from femtomeas.meas_config_agent_v2.eigenvectors_models import EigenSolverConfig
-from .state import State
+from .state import State, registerInstanceClass
 from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
 from femtomeas.agent_common.callgraph import Node
 from .action_config import ActionGroup, ActionGroupHandle
 from typing import ClassVar
+
+registerInstanceClass("eigensolvers", EigenSolverConfig)
 
 def identifyEigenSolvers(model, group_name: str, action_group_name: str,  state: State):     
     action_group_code = state.groups[action_group_name].code

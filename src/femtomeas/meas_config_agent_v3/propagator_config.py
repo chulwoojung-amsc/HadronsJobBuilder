@@ -7,11 +7,13 @@ from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo
 from femtomeas.meas_config_agent_v2.propagator_config_models import PropagatorConfig
-from .state import State
+from .state import State, registerInstanceClass
 from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
 from femtomeas.agent_common.callgraph import Node
 from .source_config import SourceGroup, SourceGroupHandle
 from .solver_config import SolverGroup, SolverGroupHandle
+
+registerInstanceClass("propagators", PropagatorConfig)
 
 def identifyPropagators(model, group_name, source_group_name, solver_group_name, state: State): 
     source_group_code = state.groups[source_group_name].code

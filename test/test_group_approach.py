@@ -18,6 +18,7 @@ from femtomeas.meas_config_agent_v3.eigenvectors import createEigenSolverGroup, 
 
 from femtomeas.meas_config_agent_v3.state import State, reloadStateCheckpoint, checkpointState
 import os
+from femtomeas.meas_config_agent.gauge import GaugeFieldConfig, UnitGauge
 
 def subWorkflowAgent(llm_model):
     role = f"""creating a code snippet that performs the instructions provided by the user during your conversation.
@@ -163,7 +164,7 @@ if __name__ == "__main__":
         print("ENACTING ",func.__name__, args)
         return func(*args)
 
-    if 1:
+    if 0:
         #Test solver agent
         state = State()
         state.instances["actions"] = encodeInstances("actions", ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ) )
@@ -288,3 +289,12 @@ if __name__ == "__main__":
             
         graph = sg1_h.parent_node
         graph.eval(enactor=testEnactor)        
+
+
+    if 1:
+        #Test XML output
+        state = State()
+        state.instances["actions"] = encodeInstances("actions", ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ))    
+        state.gauge = GaugeFieldConfig(Lx=4,Ly=4,Lz=4,Lt=4,config=UnitGauge())
+        xml = state.toHadronsXML()
+        print(xml.toString())

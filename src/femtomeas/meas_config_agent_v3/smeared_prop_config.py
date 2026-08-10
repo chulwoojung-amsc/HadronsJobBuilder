@@ -3,11 +3,13 @@ from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo
 from femtomeas.meas_config_agent_v2.smeared_prop_config_models  import SmearedPropagatorConfig
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
-from .state import State
+from .state import State, registerInstanceClass
 from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
 from femtomeas.agent_common.callgraph import Node
 from typing import ClassVar
 from .propagator_config import PropagatorGroup, PropagatorGroupHandle
+
+registerInstanceClass("smeared_propagators", SmearedPropagatorConfig)
 
 def identifySmearedPropagators(model, group_name: str, input_props_group_name:str, state: State):
     input_props_group_code = state.groups[input_props_group_name].code

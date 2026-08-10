@@ -6,9 +6,11 @@ from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_update_agent import parameterAgent
 from femtomeas.meas_config_agent.meas_agent_common import Gammas
 from femtomeas.meas_config_agent_v2.source_config_models import SourceConfig, SeqGammaSource
-from .state import State
+from .state import State, registerInstanceClass
 from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
 from femtomeas.agent_common.callgraph import Node
+
+registerInstanceClass("sources", SourceConfig)
 
 def identifySources(model, group_name : str, state : State):
     role = """creating instances of SourceConfig for every propagator source required by the user.

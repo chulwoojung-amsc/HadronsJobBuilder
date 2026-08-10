@@ -7,12 +7,14 @@ from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
 from femtomeas.meas_config_agent_v2.solver_config_models import SolverConfig, RBPrecCGsolver
-from .state import State
+from .state import State, registerInstanceClass
 from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
 from femtomeas.agent_common.callgraph import Node
 from .action_config import ActionGroup, ActionGroupHandle
 from .eigenvectors import EigenSolverGroup, EigenSolverGroupHandle
-    
+
+registerInstanceClass("solvers", SolverConfig)
+
 def identifySolvers(model, group_name: str, action_group_name: str,  eigensolver_group_name : str | None, state: State):    
     action_group_code = state.groups[action_group_name].code
 

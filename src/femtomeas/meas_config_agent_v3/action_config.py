@@ -7,8 +7,10 @@ from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_update_agent import parameterAgent
 from femtomeas.agent_common.callgraph import Node
 from femtomeas.meas_config_agent_v2.action_config_models import ActionConfig
-from .state import State
+from .state import State, registerInstanceClass
 from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
+
+registerInstanceClass("actions", ActionConfig)
 
 def identifyActions(model, group_name:str, state: State):
     role = """identifying all lattice QCD action instances required by the user.
