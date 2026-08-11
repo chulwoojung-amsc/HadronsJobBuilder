@@ -66,7 +66,9 @@ You must adhere to the following rules for generating solver instances:
 
     parameter_rules = [
   #action
-      """SolverConfig.action: Enter the name of the action associated with this solver instance. This name must be within the provided subset of action names.
+      """SolverConfig.action: Enter the name of the action associated with this solver instance. 
+  - This name must be within the provided subset of action names.
+  - This name must correspond to an action with precision "Double"
   - If there is only one action instance, do not ask the user which action to use.
       """,
 
@@ -84,14 +86,11 @@ You must adhere to the following rules for generating solver instances:
 
     user_info_rules = """- You must use an empty string for this parameter."""
 
-
-    act, _ = executeCodeAndParse(action_group_code, InstanceInfo, action_group_name) 
-    used_actions = [ a.instance_tag for a in act ]
+    used_actions = [ a.instance_tag for a in state.getGroup(action_group_name) ]
 
     used_eigsol = [""]
-    if use_evecs:
-        esol, _ = executeCodeAndParse(state.groups[eigensolver_group_name].code, InstanceInfo, eigensolver_group_name) 
-        used_eigsol = used_eigsol + [ a.instance_tag for a in esol ]
+    if use_evecs:        
+        used_eigsol = used_eigsol + [ a.instance_tag for a in state.getGroup(eigensolver_group_name) ]
 
     def checkAll(solvers):
         for i in range(len(solvers)):
@@ -112,7 +111,7 @@ You must adhere to the following rules for generating solver instances:
     inst = state.getInstanceCode("solvers")
 
     updated_solver_code, group_solver_code, _ = parameterAgent(model, SolverConfig, "solvers", inst.value, group_name, None, role, tools=[], \
-                                                            parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=checkAll, additional_user_query_rules=additional_user_query_rules)
+                                                            parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=checkAll, instance_validator=lambda a: a.check(state), additional_user_query_rules=additional_user_query_rules)
     inst.value = updated_solver_code
     return group_solver_code
     

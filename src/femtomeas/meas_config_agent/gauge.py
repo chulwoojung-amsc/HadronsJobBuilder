@@ -94,7 +94,9 @@ class GaugeFieldConfig(BaseModel):
     
     def setXML(self,xml):
         self.config.setXML(xml)
-
+        cast = xml.addModule("gaugef", "MUtilities::GaugeSinglePrecisionCast")
+        HadronsXML.setValue(cast, "field", "gauge")
+        
     def setXMLsingle(self,xml,job_index, override_path = None  ):
         """
         Output the XML just for a single configuration.

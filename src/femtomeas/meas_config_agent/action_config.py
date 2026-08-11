@@ -34,7 +34,7 @@ The rules for identifying the required action instances are:
     def group_validate(actions):
         for i in range(len(actions)):
             for j in range(i+1, len(actions)):
-                if actions[i].action == actions[j].action:
+                if actions[i].action == actions[j].action and actions[i].precision == actions[j].precision:
                     return (False, f"Action instances {actions[i].name} and {actions[j].name} have the same parameters. Action instances must be unique.")
         return (True, "")
 

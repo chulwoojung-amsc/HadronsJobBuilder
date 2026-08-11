@@ -1,6 +1,7 @@
 from femtomeas.agent_common.python_output_agent import executeCode, executeCodeAndParse
+from femtomeas.agent_common.python_update_agent import InstanceInfo
 from .agent_workflow_base import BaseGroup
-from typing import Dict
+from typing import Dict, ClassVar, List
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 import json
 from femtomeas.agent_common.common import Print
@@ -52,6 +53,55 @@ class State(BaseModel):
             self.instances[instance_class] = None
         return DictRef(self.instances, instance_class)
 
+    _instance_cache: ClassVar[dict[str, dict[str, dict[str, BaseModel]]]] = {}  #[instance_class][instance_code][instance_name]
+    def getInstances(self, instance_class: str)->Dict[str,BaseModel]:
+        """Return a dictionary of instances generated from the stored code string"""   
+        assert instance_class in instance_class_registry
+        if instance_class not in self.instances:
+            return {}
+        instance_code = self.instances[instance_class]
+
+        #Caching
+        if instance_class not in self._instance_cache:
+            self._instance_cache[instance_class] = {}       
+
+        #Use instance code as a singleton key, allowing us to regenerate the cached instances if the code has changed
+        if instance_code not in self._instance_cache[instance_class]:
+            self._instance_cache[instance_class].clear() #clear old code and instances if exist
+            self._instance_cache[instance_class][instance_code] = {}
+
+            r, e = executeCodeAndParse(self.instances[instance_class], instance_class_registry[instance_class], instance_class)
+            if len(e) > 0:
+                raise Exception(f"Executing code gave the following exceptions: {e}")            
+
+            for p in r:
+                self._instance_cache[instance_class][instance_code][p.name] = p
+
+        return self._instance_cache[instance_class][instance_code]
+
+    def getInstance(self, instance_class: str, instance_name: str)->BaseModel | None:
+        """Return a particular instance by name as generated from the stored code string"""   
+        instances = self.getInstances(instance_class)        
+        if instance_name not in instances:
+            return None
+        else:
+            return instances[instance_name]
+
+    _group_cache: ClassVar[dict[str, List[str]]] = {}
+    def getGroup(self, group_name)->List[str] | None:
+        """Get the list of instance names in the group, based on the stored code"""
+        if group_name not in self.groups:            
+            return None #even if in cache
+        if group_name not in self._group_cache:            
+            r, e = executeCodeAndParse(self.groups[group_name].code, InstanceInfo, group_name) 
+            if len(e) > 0:
+                raise Exception(f"Executing code gave the following exceptions: {e}")      
+            assert isinstance(r, list)
+            self._group_cache[group_name] = r            
+
+        return self._group_cache[group_name]
+
+
     def _toHadronsXMLbase(self)->HadronsXML:
         """
         Set all elements bar the gauge module, which needs special treatment
@@ -59,14 +109,10 @@ class State(BaseModel):
         xml = HadronsXML()
         xml.setRunID(1234) #What does this do?
 
-        for instance_class, instance_code in self.instances.items():
-            assert instance_class in instance_class_registry
-            r, e = executeCodeAndParse(instance_code, instance_class_registry[instance_class], instance_class)
-            if len(e) > 0:
-                raise Exception(f"Executing code for type {instance_class_registry[instance_class].__name__} gave the following exceptions: {e}")
-            for a in r:
+        for instance_class in self.instances.keys():
+            r = self.getInstances(instance_class)
+            for _, a in r.items():
                 a.setXML(xml)
-        
         return xml
     
     def toHadronsXML(self)->HadronsXML:

@@ -54,7 +54,7 @@ if __name__ == "__main__":
     if 0:
         #Test state serialization
         state = State()
-        state.instances["actions"] = encodeInstances("actions", ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ) )
+        state.instances["actions"] = encodeInstances("actions", ActionConfig(name="action_inst", precision="Double", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ) )
         state.groups["agroup1"] = ActionGroup(code = encodeGroup("agroup1", "action_inst"))
 
         state.instances["sources"] = encodeInstances("sources", [ SourceConfig(name="wall_0", source=WallSource(timeslice=0, momentum=(0,0,0,0)) ),  SourceConfig(name="point_0", source=PointSource(location=(0,0,0,0)) )   ])            
@@ -78,6 +78,37 @@ if __name__ == "__main__":
         assert rstate.groups["source_group"].code == state.groups["source_group"].code
 
 
+    if 0:
+        #Test instance caching
+        state = State()
+        ainst = ActionConfig(name="action_inst", precision="Double", action=DWFaction(Ls=12, mass=0.01, M5=1.8) )
+        state.instances["actions"] = encodeInstances("actions",  ainst)
+
+        got = state.getInstance("actions", "action_inst")
+        assert got == ainst
+
+        got2 = state.getInstance("actions", "action_inst")
+        assert got2 is got
+
+        ainst2 = ActionConfig(name="action_inst", precision="Single", action=DWFaction(Ls=13, mass=0.01, M5=1.9) )
+        state.instances["actions"] = encodeInstances("actions",  ainst2)
+
+        got3 = state.getInstance("actions", "action_inst")
+        assert got3 != ainst
+        assert got3 == ainst2
+        assert got3 is not got2
+
+    if 0:
+        #Test group caching
+        state = State()        
+        state.groups["agroup1"] = ActionGroup(code = encodeGroup("agroup1", "action_inst"))
+
+        gp = state.getGroup("agroup1")
+        assert len(gp) == 1 and gp[0].instance_tag == "action_inst"
+
+        gp2 = state.getGroup("agroup1")
+        assert gp2 is gp
+
 
     def testEnactor(func, args):
         print("ENACTING ",func.__name__, args)
@@ -86,7 +117,7 @@ if __name__ == "__main__":
     if 0:
         #Test solver agent
         state = State()
-        state.instances["actions"] = encodeInstances("actions", ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ) )
+        state.instances["actions"] = encodeInstances("actions", ActionConfig(name="action_inst", precision="Double", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ) )
         state.groups["agroup1"] = ActionGroup(code = encodeGroup("agroup1", "action_inst"))
 
         initializeState(amsc_llm_0t, state)
@@ -97,8 +128,24 @@ if __name__ == "__main__":
         graph = sg1_h.parent_node
         graph.eval(enactor=testEnactor)
 
-
     if 1:
+        #Test mixed-prec solver agent
+        state = State()
+        state.instances["actions"] = encodeInstances("actions", [
+            ActionConfig(name="action_d", precision="Double", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ),
+            ActionConfig(name="action_s", precision="Single", action=DWFaction(Ls=12, mass=0.01, M5=1.8) )
+        ])
+        state.groups["agroup1"] = ActionGroup(code = encodeGroup("agroup1", ["action_d", "action_s"]))
+
+        initializeState(amsc_llm_0t, state)
+
+        ag1_h = retrieveGroupHandle("agroup1")
+        sg1_h = createSolverGroup("sgroup1", ag1_h)
+            
+        graph = sg1_h.parent_node
+        graph.eval(enactor=testEnactor)        
+
+    if 0:
         #Test source agent
         state = State()
         initializeState(amsc_llm_0t, state)
@@ -223,7 +270,7 @@ if __name__ == "__main__":
     if 0:
         #Test XML output
         state = State()
-        state.instances["actions"] = encodeInstances("actions", ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ))    
+        state.instances["actions"] = encodeInstances("actions", ActionConfig(name="action_inst", precision="Double", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ))    
         state.gauge = GaugeFieldConfig(Lx=4,Ly=4,Lz=4,Lt=4,config=UnitGauge())
         xml = state.toHadronsXML()
         print(xml.toString())
