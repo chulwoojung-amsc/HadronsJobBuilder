@@ -1,11 +1,10 @@
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple, ClassVar
-from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
-import json
+from .hadrons_xml import HadronsXML
 from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_update_agent import parameterAgent
-from femtomeas.meas_config_agent.meas_agent_common import Gammas
-from femtomeas.meas_config_agent_v2.source_config_models import SourceConfig, SeqGammaSource
+from .meas_agent_common import Gammas
+from .source_config_models import SourceConfig, SeqGammaSource
 from .state import State
 from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx

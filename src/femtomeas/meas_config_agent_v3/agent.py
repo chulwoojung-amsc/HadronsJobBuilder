@@ -32,7 +32,7 @@ from .state import State, checkpointState
 from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState, reserved_names, initializeState
 from .agent_workflow_globals import registry, registerWorkflowOperation, function_manifest, getUniqueIdx
 from femtomeas.agent_common.callgraph import Node
-from femtomeas.meas_config_agent.gauge import identifyGaugeConfigs
+from .gauge import identifyGaugeConfigs
 
 #Ensure you import all modules that define agent actions here so that they are registered
 from . import action_config

@@ -1,11 +1,10 @@
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple
-from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+from .hadrons_xml import HadronsXML
 
 from femtomeas.agent_common.common import *
-from femtomeas.agent_common.python_output_agent import parameterAgent
-from femtomeas.meas_config_agent.meas_agent_common import Gammas
-from femtomeas.meas_config_agent.source_config import momentumStr
+from .meas_agent_common import Gammas
+from .source_config import momentumStr
 
 class WallSmear(BaseModel):
     """A wall smearing with optional momentum,    sum_x e^{+i p . x} prop_sol(x)  """

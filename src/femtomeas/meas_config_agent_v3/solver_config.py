@@ -1,12 +1,10 @@
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple, ClassVar
-from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
-from langchain.agents import create_agent
 from femtomeas.agent_common.common import *
-from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+from .hadrons_xml import HadronsXML
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
-from femtomeas.meas_config_agent_v2.solver_config_models import SolverConfig, RBPrecCGsolver
+from .solver_config_models import SolverConfig, RBPrecCGsolver
 from .state import State
 from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx

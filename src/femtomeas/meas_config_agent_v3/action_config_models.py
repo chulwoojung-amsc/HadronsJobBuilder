@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple
 import xml.etree.ElementTree as ET
-from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+from .hadrons_xml import HadronsXML
 
 class DWFaction(BaseModel):
     """A Domain Wall Fermion (DWF) action instance"""

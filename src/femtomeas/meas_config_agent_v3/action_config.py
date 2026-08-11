@@ -1,12 +1,12 @@
 from typing import Literal, Union, List, Optional, Tuple
 from typing import Tuple, TypeVar, ClassVar, Callable
 import xml.etree.ElementTree as ET
-from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+from .hadrons_xml import HadronsXML
 
 from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_update_agent import parameterAgent
 from femtomeas.agent_common.callgraph import Node
-from femtomeas.meas_config_agent_v2.action_config_models import ActionConfig
+from .action_config_models import ActionConfig
 from .state import State
 from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx

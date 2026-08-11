@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple
 from femtomeas.agent_common.common import *
-from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+from .hadrons_xml import HadronsXML
 from femtomeas.agent_common.python_output_agent import parameterAgent
 
 class RBPrecCGsolver(BaseModel):

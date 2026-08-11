@@ -1,6 +1,6 @@
 from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo, executeCodeAndParse
-from femtomeas.meas_config_agent_v2.eigenvectors_models import EigenSolverConfig
+from .eigenvectors_models import EigenSolverConfig
 from .state import State
 from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName,getCurrentState
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx

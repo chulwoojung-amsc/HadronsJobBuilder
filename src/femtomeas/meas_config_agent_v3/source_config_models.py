@@ -1,10 +1,10 @@
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple
-from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+from .hadrons_xml import HadronsXML
 
 from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_output_agent import parameterAgent
-from femtomeas.meas_config_agent.meas_agent_common import Gammas
+from .meas_agent_common import Gammas
 
 def momentumStr(mom):
     return "0. 0. 0. 0." if mom == None else spaceSeparateSeq(mom)

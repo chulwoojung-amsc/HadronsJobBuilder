@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter, PositiveFloat, PositiveInt
 from typing import Literal, Union, List, Optional, Tuple
-from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+from .hadrons_xml import HadronsXML
 from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_output_agent import parameterAgent
 

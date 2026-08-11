@@ -1,9 +1,9 @@
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple
 from femtomeas.agent_common.common import *
-from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
-from femtomeas.meas_config_agent.meas_agent_common import Gammas
-from femtomeas.meas_config_agent.source_config import momentumStr
+from .hadrons_xml import HadronsXML
+from .meas_agent_common import Gammas
+from .source_config import momentumStr
 
 mesonSpecialKeywords = Literal["pion","kaon","pseudoscalar","vector","axial-vector"]
 

@@ -1,12 +1,9 @@
-import json
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple, ClassVar
-from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from femtomeas.agent_common.common import *
-from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo
-from femtomeas.meas_config_agent_v2.propagator_config_models import PropagatorConfig
+from .propagator_config_models import PropagatorConfig
 from .state import State
 from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx

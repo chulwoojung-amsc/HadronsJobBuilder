@@ -4,9 +4,10 @@ from typing import Dict
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 import json
 from femtomeas.agent_common.common import Print
-from femtomeas.meas_config_agent.gauge import GaugeFieldConfig
-from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+from .gauge import GaugeFieldConfig
+from .hadrons_xml import HadronsXML
 from pathlib import Path
+from .agent_workflow_globals import instance_class_registry
 
 def get_import_line(obj):
     cls = obj if isinstance(obj, type) else type(obj)
@@ -62,7 +63,7 @@ class State(BaseModel):
             assert instance_class in instance_class_registry
             r, e = executeCodeAndParse(instance_code, instance_class_registry[instance_class], instance_class)
             if len(e) > 0:
-                raise Exception(f"Executing code for type {c[1]} gave the following exceptions: {e}")
+                raise Exception(f"Executing code for type {instance_class_registry[instance_class].__name__} gave the following exceptions: {e}")
             for a in r:
                 a.setXML(xml)
         
