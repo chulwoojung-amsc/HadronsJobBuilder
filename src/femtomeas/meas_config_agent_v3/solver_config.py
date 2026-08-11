@@ -7,13 +7,12 @@ from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
 from femtomeas.meas_config_agent_v2.solver_config_models import SolverConfig, RBPrecCGsolver
-from .state import State, registerInstanceClass
-from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
+from .state import State
+from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
+from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
 from femtomeas.agent_common.callgraph import Node
 from .action_config import ActionGroup, ActionGroupHandle
 from .eigenvectors import EigenSolverGroup, EigenSolverGroupHandle
-
-registerInstanceClass("solvers", SolverConfig)
 
 def identifySolvers(model, group_name: str, action_group_name: str,  eigensolver_group_name : str | None, state: State):    
     action_group_code = state.groups[action_group_name].code
@@ -126,7 +125,8 @@ class SolverGroupHandle(BaseGroupHandle):
 class SolverGroup(BaseGroup):
     handle_type : ClassVar[type] = SolverGroupHandle
     code: str = Field(..., description="Code for generating the list of solver instances in the group")
-   
+
+@registerWorkflowOperation(instance_info=("solvers", SolverConfig) )       
 def createSolverGroup(group_name: str, actions: ActionGroupHandle, eigensolver: None | EigenSolverGroupHandle = None)->SolverGroupHandle:
     checkValidNewGroupName(group_name)
     def doit(group_name, gactions_group_name: str, geigensolver_group_name : str | None):
@@ -145,5 +145,4 @@ def createSolverGroup(group_name: str, actions: ActionGroupHandle, eigensolver: 
     else:
         return SolverGroupHandle(group_name, Node(f"createSolverGroup_{getUniqueIdx()}", lambda gactions, geigens: doit(group_name, gactions, geigens), input_deps=[actions, eigensolver] ) )
 
-registerWorkflowOperation(createSolverGroup)
-addReservedName("solvers")
+

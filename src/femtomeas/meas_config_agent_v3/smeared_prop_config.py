@@ -3,13 +3,12 @@ from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo
 from femtomeas.meas_config_agent_v2.smeared_prop_config_models  import SmearedPropagatorConfig
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
-from .state import State, registerInstanceClass
-from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
+from .state import State
+from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
+from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
 from femtomeas.agent_common.callgraph import Node
 from typing import ClassVar
 from .propagator_config import PropagatorGroup, PropagatorGroupHandle
-
-registerInstanceClass("smeared_propagators", SmearedPropagatorConfig)
 
 def identifySmearedPropagators(model, group_name: str, input_props_group_name:str, state: State):
     input_props_group_code = state.groups[input_props_group_name].code
@@ -77,7 +76,7 @@ class SmearedPropagatorGroup(BaseGroup):
     handle_type : ClassVar[type] = PropagatorGroupHandle
     code: str = Field(..., description="Code for generating the list of sink-smeared propagator instances in the group")
 
-    
+@registerWorkflowOperation(instance_info=("smeared_propagators", SmearedPropagatorConfig) )        
 def createSmearedPropagatorGroup(group_name: str, unsmeared_props: PropagatorGroupHandle)->SmearedPropagatorGroupHandle:
     checkValidNewGroupName(group_name)
 
@@ -90,4 +89,3 @@ def createSmearedPropagatorGroup(group_name: str, unsmeared_props: PropagatorGro
    
     return SmearedPropagatorGroupHandle(group_name, Node(f"createSmearedPropagatorGroup_{getUniqueIdx()}", lambda gunsmeared_props: doit(group_name, gunsmeared_props), input_deps=[unsmeared_props] ) )
 
-registerWorkflowOperation(createSmearedPropagatorGroup)

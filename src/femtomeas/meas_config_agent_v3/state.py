@@ -12,11 +12,6 @@ def get_import_line(obj):
     cls = obj if isinstance(obj, type) else type(obj)
     return f"from {cls.__module__} import {cls.__qualname__}"
 
-#Map of instance class string to type
-instance_class_registry = {}
-def registerInstanceClass(instance_class: str, instance_model: type):
-    instance_class_registry[instance_class] = instance_model
-
 class DictRef:
     """A 'reference' to an element in a dict, allowing it to be obtained and set like a member variable"""
     def __init__(self, d : dict, key: str):
@@ -38,7 +33,7 @@ class State(BaseModel):
     gauge: GaugeFieldConfig | None = Field(None,description="The gauge configuration parameters")
     
     def isValidInstance(self, name: str, instance_class : str):
-        assert instance_class in self.instance
+        assert instance_class in self.instances
         r, e = executeCode(self.instances[instance_class])
         if len(e) > 0:
             raise Exception(f"Executing code gave the following exceptions: {e}")

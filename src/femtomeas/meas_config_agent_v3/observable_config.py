@@ -4,13 +4,12 @@ from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceI
 from femtomeas.meas_config_agent.meas_agent_common import Gammas
 from femtomeas.meas_config_agent_v2.observable_config_models import ObservableConfig, getMesonGammas, mesonSpecialKeywords, ContractionSinkNone
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
-from .state import State, registerInstanceClass
-from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
+from .state import State
+from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
+from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
 from femtomeas.agent_common.callgraph import Node
 from .propagator_config import PropagatorGroupHandle, PropagatorGroup
 from .smeared_prop_config import SmearedPropagatorGroupHandle, SmearedPropagatorGroup
-
-registerInstanceClass("observable_configs", ObservableConfig)
 
 @tool
 def getMesonGammasTool(op : mesonSpecialKeywords)-> List[Gammas]:
@@ -133,6 +132,7 @@ class Meson2ptGroup(BaseGroup):
     handle_type : ClassVar[type] = ObservableGroupHandle
     code: str = Field(..., description="Code for generating the list of meson 2pt function instances in the group")
 
+@registerWorkflowOperation(instance_info=("observable_configs", ObservableConfig) )
 def createMeson2ptGroup(group_name: str, propagators: PropagatorGroupHandle | SmearedPropagatorGroupHandle)->ObservableGroupHandle:
     """Create a Meson2ptGroup and return its handle
 
@@ -147,4 +147,4 @@ The meson two-point function (aka meson correlator) is used to describe the latt
    
     return ObservableGroupHandle(group_name, Node(f"createMeson2ptGroup_{getUniqueIdx()}", lambda gprops: doit(group_name, gprops), input_deps=[propagators] ) )
 
-registerWorkflowOperation(createMeson2ptGroup)
+

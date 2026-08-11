@@ -6,11 +6,10 @@ from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_update_agent import parameterAgent
 from femtomeas.meas_config_agent.meas_agent_common import Gammas
 from femtomeas.meas_config_agent_v2.source_config_models import SourceConfig, SeqGammaSource
-from .state import State, registerInstanceClass
-from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
+from .state import State
+from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
+from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
 from femtomeas.agent_common.callgraph import Node
-
-registerInstanceClass("sources", SourceConfig)
 
 def identifySources(model, group_name : str, state : State):
     role = """creating instances of SourceConfig for every propagator source required by the user.
@@ -99,7 +98,7 @@ class SourceGroup(BaseGroup):
     handle_type : ClassVar[type] = SourceGroupHandle
     code: str = Field(..., description="Code for generating the list of source instances in the group")
 
-
+@registerWorkflowOperation(instance_info=("sources", SourceConfig) )     
 def createSourceGroup(group_name: str)->SourceGroupHandle:
     def doit(group_name: str):
         state, llm_model = getCurrentState()
@@ -112,5 +111,4 @@ def createSourceGroup(group_name: str)->SourceGroupHandle:
     checkValidNewGroupName(group_name)
     return SourceGroupHandle(group_name, Node(f"createSourceGroup_{getUniqueIdx()}", lambda: doit(group_name) ) )
 
-registerWorkflowOperation(createSourceGroup)
-addReservedName("sources")
+

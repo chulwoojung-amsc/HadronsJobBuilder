@@ -7,10 +7,9 @@ from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_update_agent import parameterAgent
 from femtomeas.agent_common.callgraph import Node
 from femtomeas.meas_config_agent_v2.action_config_models import ActionConfig
-from .state import State, registerInstanceClass
-from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState
-
-registerInstanceClass("actions", ActionConfig)
+from .state import State
+from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
+from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
 
 def identifyActions(model, group_name:str, state: State):
     role = """identifying all lattice QCD action instances required by the user.
@@ -55,6 +54,7 @@ class ActionGroup(BaseGroup):
     handle_type : ClassVar[type] = ActionGroupHandle
     code: str = Field(..., description="Code for generating the list of action instances in the group")
 
+@registerWorkflowOperation(instance_info=("actions", ActionConfig) )
 def createActionGroup(group_name: str)->ActionGroupHandle:
     def doit(group_name: str):
         state, llm_model = getCurrentState()
@@ -67,5 +67,3 @@ def createActionGroup(group_name: str)->ActionGroupHandle:
     checkValidNewGroupName(group_name)
     return ActionGroupHandle(group_name, Node(f"createActionGroup_{getUniqueIdx()}", lambda: doit(group_name) ) )
 
-registerWorkflowOperation(createActionGroup)
-addReservedName("actions")

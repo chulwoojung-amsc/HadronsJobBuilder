@@ -20,6 +20,7 @@ from femtomeas.meas_config_agent_v3.state import State, reloadStateCheckpoint, c
 import os
 from femtomeas.meas_config_agent.gauge import GaugeFieldConfig, UnitGauge
 import io
+from langchain_openai import ChatOpenAI
 
 def subWorkflowAgent(llm_model):
     role = f"""creating a code snippet that performs the instructions provided by the user during your conversation.
@@ -300,7 +301,7 @@ if __name__ == "__main__":
         xml = state.toHadronsXML()
         print(xml.toString())
 
-    if 1:
+    if 0:
         #Test code generator output
         state = State()
         state.instances["actions"] = encodeInstances("actions", ActionConfig(name="action_inst", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ))    

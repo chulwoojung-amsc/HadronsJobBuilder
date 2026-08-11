@@ -123,12 +123,12 @@ if __name__ == "__main__":
                                 input_state=reloadStateCheckpoint(checkpoint_file) if reload_checkpoint else None,
                                 checkpoint_state=(True, checkpoint_file)  )
        
-        # if write_xml:
-        #     state.toHadronsXML().write(write_xml_file)  #note, if the XML uses non-local files it cannot be used directly
+        if write_xml:
+            state.toHadronsXML().write(write_xml_file)  #note, if the XML uses non-local files it cannot be used directly
 
-        # if args.write_xml_generator is not None:
-        #     print(args.write_xml_generator)
-        #     state.toXMLgeneratorCode(args.write_xml_generator[0])
+        if args.write_xml_generator is not None:
+            print(args.write_xml_generator)
+            state.toXMLgeneratorCode(args.write_xml_generator[0])
 
     #Start the job manager
     jman = None

@@ -1,6 +1,4 @@
-import os
 from femtomeas.agent_common.common import *
-from femtomeas.agent_common.print_pydantic_meta import llm_json_text
 from femtomeas.agent_common.agent_base import parameterAgent, parameterModelCall
 
 from typing import Tuple, TypeVar, ClassVar
@@ -22,23 +20,17 @@ import json
 from femtomeas.agent_common.common import getUserInput, provideInformationToUser, queryYesNo, prettyPrintPydantic, getStructuredResponse, Print as AgentPrint, Input as AgentInput
 from femtomeas.workflow_manager.api_general import getKnownMachines, getUserAccountProjects, getMachineQueues
 from langchain.tools import tool
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.runtime import Runtime
 import re
-import traceback
-
-from typing import Callable, Self
-from typing_extensions import NotRequired
 from femtomeas.agent_common.agent_base import listEnumerateStr, indentExceptFirst, promptStringList
 
 import asteval
 from femtomeas.agent_common.callgraph import Node
 import sys
 from femtomeas.workflow_manager.manager_config import readManagerConfigFile
-from langchain_openai import ChatOpenAI
 from femtomeas.agent_common.agent_config import readI2APIkey
 from .state import State, checkpointState
-from .agent_workflows import BaseGroup, BaseGroupHandle, registerWorkflowOperation, checkValidNewGroupName, getUniqueIdx, addReservedName, getCurrentState, function_manifest, GroupTypes, GroupHandleTypes, reserved_names, initializeState, registry
+from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState, reserved_names, initializeState
+from .agent_workflow_globals import registry, registerWorkflowOperation, function_manifest, getUniqueIdx
 from femtomeas.agent_common.callgraph import Node
 from femtomeas.meas_config_agent.gauge import identifyGaugeConfigs
 
@@ -50,7 +42,7 @@ from . import propagator_config
 from . import observable_config
 from . import smeared_prop_config
 
-
+@registerWorkflowOperation()
 def mergeGroup[T: BaseGroupHandle](group_name: str, a: T, b : T, *other_group_handles : T)->T:
     """Create a new group by merging two or more groups
     Arguments:
@@ -93,8 +85,7 @@ def mergeGroup[T: BaseGroupHandle](group_name: str, a: T, b : T, *other_group_ha
     print("MERGE GRAPH ", len(other_group_handles) + 2)
     return handle_type(group_name, Node(f"mergeGroup_{getUniqueIdx()}", lambda ga, gb, *ogb: doit(ga,gb,*ogb), input_deps=[a,b,*other_group_handles] ) )
 
-registerWorkflowOperation(mergeGroup)
-
+@registerWorkflowOperation()
 def retrieveGroupHandle[T: BaseGroupHandle](group_name : str)->T:
     """Retrieve a handle to an existing group by name"""
     state, _ = getCurrentState()
@@ -103,8 +94,6 @@ def retrieveGroupHandle[T: BaseGroupHandle](group_name : str)->T:
     handle_type = group.handle_type
     print("RETRIEVE HANDLE ", group_name, " ", handle_type.__name__)
     return handle_type(group_name, Node(f"retrieveGroupHandle_{getUniqueIdx()}", lambda: group_name))
-
-registerWorkflowOperation(retrieveGroupHandle)
 
 
 @tool
@@ -147,6 +136,7 @@ Code rules
 - Functions in the registry act on a hidden internal state. The inputs and outputs are merely handles for chaining the logic. Handles must all be consumed within the code snippet; do not store them in any output structures (lists, dictionaries, etc)
 - Your snippet should only perform the user's instructions and nothing else. Do not add code to write outputs.
 - The output handles from your code snippet should be stored in an array named 'results'. Only store the handles for the outputs (i.e. the last calls in any given chain), not the intermediaries.
+- If the user specifies that they do not want any steps in the workflow, output an empty array named 'results'.
 
 -----------
 Tool usage
@@ -237,4 +227,10 @@ def measConfigAgent(llm_model,
 
     #Finally, obtain the gauge configurations on which to perform the workflow
     state, _ = getCurrentState()
-    state.gauge = identifyGaugeConfigs(llm_model, [])
+    state.gauge = identifyGaugeConfigs(llm_model, [HumanMessage("Perform your workflow")])
+
+    #Checkpoint and return
+    do_checkpoint, checkpoint_file = checkpoint_state
+    if do_checkpoint:
+        checkpointState(state, checkpoint_file)
+    return state        

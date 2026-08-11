@@ -1,37 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import Tuple, TypeVar, ClassVar, Callable
-from inspect import signature, getdoc, currentframe
 from .agent_workflow_base import BaseGroup, BaseGroupHandle, GroupTypes, GroupHandleTypes
 from .state import State
-
-
-counter = 0 #for unique indexing of graph nodes
-def getUniqueIdx():
-    global counter
-    counter += 1
-    return counter - 1
-
-registry = []
-
-def registerWorkflowOperation(op: Callable):
-    if op not in registry:
-        registry.append(op)
-
-def function_manifest():
-    lines = []
-    for fn in registry:
-        name = fn.__name__
-        sig = signature(fn)
-        doc = getdoc(fn) or ""
-        lines.append(f"- {name}{sig}: {doc}")
-    return "\n".join(lines)
-
-
-reserved_names = []
-
-def addReservedName(nm: str):
-    if nm not in reserved_names:
-        reserved_names.append(nm)
+from .agent_workflow_globals import reserved_names
 
 state = State()
 llm_model_glob = None
