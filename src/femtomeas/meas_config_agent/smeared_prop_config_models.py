@@ -4,7 +4,7 @@ from .hadrons_xml import HadronsXML
 
 from femtomeas.agent_common.common import *
 from .meas_agent_common import Gammas
-from .source_config import momentumStr
+from .source_config_models import momentumStr
 
 class WallSmear(BaseModel):
     """A wall smearing with optional momentum,    sum_x e^{+i p . x} prop_sol(x)  """

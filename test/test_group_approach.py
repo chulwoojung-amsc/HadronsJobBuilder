@@ -1,26 +1,27 @@
-from femtomeas.meas_config_agent_v3.agent_workflows import *
-from femtomeas.meas_config_agent_v3.agent import *
-from femtomeas.meas_config_agent_v2.action_config_models import DWFaction, ActionConfig
+from femtomeas.meas_config_agent.agent_workflows import *
+from femtomeas.meas_config_agent.agent import *
+from femtomeas.meas_config_agent.action_config_models import DWFaction, ActionConfig
 from femtomeas.agent_common.python_update_agent import InstanceInfo
-from femtomeas.meas_config_agent_v2.source_config_models import SourceConfig, PointSource, WallSource
-from femtomeas.meas_config_agent_v2.solver_config_models import RBPrecCGsolver, SolverConfig
-from femtomeas.meas_config_agent_v2.propagator_config_models import PropagatorConfig
-from femtomeas.meas_config_agent_v2.smeared_prop_config_models import SmearedPropagatorConfig, WallSmear
-from femtomeas.meas_config_agent_v2.eigenvectors_models import EigenSolverConfig, LanczosEigenSolver, ChebyParams
+from femtomeas.meas_config_agent.source_config_models import SourceConfig, PointSource, WallSource
+from femtomeas.meas_config_agent.solver_config_models import RBPrecCGsolver, SolverConfig
+from femtomeas.meas_config_agent.propagator_config_models import PropagatorConfig
+from femtomeas.meas_config_agent.smeared_prop_config_models import SmearedPropagatorConfig, WallSmear
+from femtomeas.meas_config_agent.eigenvectors_models import EigenSolverConfig, LanczosEigenSolver, ChebyParams
 
-from femtomeas.meas_config_agent_v3.action_config import createActionGroup, ActionGroup
-from femtomeas.meas_config_agent_v3.solver_config import createSolverGroup, SolverGroup
-from femtomeas.meas_config_agent_v3.source_config import createSourceGroup, SourceGroup
-from femtomeas.meas_config_agent_v3.propagator_config import createPropagatorGroup, PropagatorGroup
-from femtomeas.meas_config_agent_v3.observable_config import createMeson2ptGroup
-from femtomeas.meas_config_agent_v3.smeared_prop_config import createSmearedPropagatorGroup, SmearedPropagatorGroup
-from femtomeas.meas_config_agent_v3.eigenvectors import createEigenSolverGroup, EigenSolverGroup
+from femtomeas.meas_config_agent.action_config import createActionGroup, ActionGroup
+from femtomeas.meas_config_agent.solver_config import createSolverGroup, SolverGroup
+from femtomeas.meas_config_agent.source_config import createSourceGroup, SourceGroup
+from femtomeas.meas_config_agent.propagator_config import createPropagatorGroup, PropagatorGroup
+from femtomeas.meas_config_agent.observable_config import createMeson2ptGroup
+from femtomeas.meas_config_agent.smeared_prop_config import createSmearedPropagatorGroup, SmearedPropagatorGroup
+from femtomeas.meas_config_agent.eigenvectors import createEigenSolverGroup, EigenSolverGroup
 
-from femtomeas.meas_config_agent_v3.state import State, reloadStateCheckpoint, checkpointState
+from femtomeas.meas_config_agent.state import State, reloadStateCheckpoint, checkpointState
 import os
 from femtomeas.meas_config_agent.gauge import GaugeFieldConfig, UnitGauge
 import io
 from langchain_openai import ChatOpenAI
+import sys
 
 def subWorkflowAgent(llm_model):
     role = f"""creating a code snippet that performs the instructions provided by the user during your conversation.

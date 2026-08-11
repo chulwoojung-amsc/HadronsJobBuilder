@@ -1,117 +1,56 @@
-import json
-from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
-from typing import Literal, Union, List, Optional, Tuple
-from pathlib import Path
-from textwrap import indent
-from .observable_info import ObservableInfo
-from femtomeas.meas_config_agent.gauge import GaugeFieldConfig
-from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
-from femtomeas.agent_common.common import Print
 from femtomeas.agent_common.python_output_agent import executeCode, executeCodeAndParse
+from .agent_workflow_base import BaseGroup
+from typing import Dict
+from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
+import json
+from femtomeas.agent_common.common import Print
+from .gauge import GaugeFieldConfig
+from .hadrons_xml import HadronsXML
+from pathlib import Path
+from .agent_workflow_globals import instance_class_registry
 
-from .action_config import ActionConfig
-from .source_config import SourceConfig
-from .solver_config import SolverConfig
-from .propagator_config import PropagatorConfig
-from .observable_config import ObservableConfig
-from .eigenvectors import EigenSolverConfig
-from .smeared_prop_config import SmearedPropagatorConfig
+def get_import_line(obj):
+    cls = obj if isinstance(obj, type) else type(obj)
+    return f"from {cls.__module__} import {cls.__qualname__}"
 
-def checkpointState(state, filename):
-    #j = json.dumps({k: v.model_dump() for k, v in state.items()}, indent=2)
-    j=json.loads(state.model_dump_json())
-    with open(filename, 'w') as wr:
-        wr.write(json.dumps(j,indent=2))
+class DictRef:
+    """A 'reference' to an element in a dict, allowing it to be obtained and set like a member variable"""
+    def __init__(self, d : dict, key: str):
+        self._dict = d
+        self._key = key
 
-def reloadStateCheckpoint(filename):
-    Print("Reloading state checkpoint from",filename)
-    with open(filename, 'r') as rd:
-        j = rd.read()
-    return State.model_validate_json(j)
+    @property
+    def value(self):
+        return self._dict[self._key]
+
+    @value.setter
+    def value(self, v):
+        self._dict[self._key] = v
 
 class State(BaseModel):
-    query: str | None = Field(None,description="The original query")
-    observables: List[ObservableInfo] | None = Field(None,description="The list of observables and associated relevant information")
-    actions: str | None = Field(None,description="Code for generating action instances")
-    sources: str | None = Field(None,description="Code for generating source instances")
-    eigensolvers: str | None = Field(None,description="Code for generating eigensolver instances")
-    solvers: str | None = Field(None,description="Code for generating the solver instances")
-    propagators: str | None = Field(None,description="Code for generating the propagator instances")
-    smeared_propagators: str | None = Field(None,description="Code for generating smeared propagator instances")
-    observable_configs : str | None = Field(None,description="Code for generating observable instances")
+    instances: Dict[str,str] = Field({}, description="map of instance class (actions, solvers, etc) to the code for generating those instances")
+    groups: Dict[str, BaseGroup] = Field({}, description="map of group name to a BaseGroup-derived objects containing code for generating the list of instances in the group (by name)")
+
     gauge: GaugeFieldConfig | None = Field(None,description="The gauge configuration parameters")
-
-    def isValidObservable(self, obs_name):
-        for p in self.observables:
-            if p.name == obs_name:
-                return True
-        return False
-
-    def locateObservable(self, obs_name) -> ObservableInfo | None:
-        for p in self.observables:
-            if p.name == obs_name:
-                return p
-        return None
     
-    def isValidAction(self, action_name):
-        r, e = executeCode(self.actions)
+    def isValidInstance(self, name: str, instance_class : str):
+        assert instance_class in self.instances
+        r, e = executeCode(self.instances[instance_class])
         if len(e) > 0:
             raise Exception(f"Executing code gave the following exceptions: {e}")
-        assert "actions" in r.keys()
-        actions = r["actions"]
+        assert instance_class in r.keys()
+        instances = r[instance_class]
 
-        for p in actions:
-            if p["name"] == action_name:
-                return True
-        return False
-    
-    def isValidSource(self, source_name):
-        r, e = executeCode(self.sources)
-        if len(e) > 0:
-            raise Exception(f"Executing code gave the following exceptions: {e}")
-        assert "sources" in r.keys()
-        sources = r["sources"]
-
-        for p in sources:
-            if p["name"] == source_name:
+        for p in instances:
+            if p["name"] == name:
                 return True
         return False
 
-    def isValidSolver(self, solver_name):
-        r, e = executeCode(self.solvers)
-        if len(e) > 0:
-            raise Exception(f"Executing code gave the following exceptions: {e}")
-        assert "solvers" in r.keys()
-        solvers = r["solvers"]
-
-        for p in solvers:
-            if p["name"] == solver_name:
-                return True
-        return False
-    
-    def isValidPropagator(self, propagator_name):
-        r, e = executeCode(self.propagators)
-        if len(e) > 0:
-            raise Exception(f"Executing code gave the following exceptions: {e}")
-        assert "propagators" in r.keys()
-        propagators = r["propagators"]
-
-        for p in propagators:
-            if p["name"] == propagator_name:
-                return True
-        return False
-
-    def isValidSmearedPropagator(self, sprop_name):
-        r, e = executeCode(self.smeared_propagators)
-        if len(e) > 0:
-            raise Exception(f"Executing code gave the following exceptions: {e}")
-        assert "smeared_propagators" in r.keys()
-        smeared_props = r["smeared_propagators"]
-
-        for p in smeared_props:
-            if p["name"] == sprop_name:
-                return True
-        return False
+    def getInstanceCode(self, instance_class: str)->DictRef:
+        """Return a 'reference' to the entry in the instance-code dictionary for this instance class"""
+        if instance_class not in self.instances:
+            self.instances[instance_class] = None
+        return DictRef(self.instances, instance_class)
 
     def _toHadronsXMLbase(self)->HadronsXML:
         """
@@ -120,10 +59,11 @@ class State(BaseModel):
         xml = HadronsXML()
         xml.setRunID(1234) #What does this do?
 
-        for c in [(self.actions, ActionConfig, "actions"), (self.sources, SourceConfig, "sources"), (self.eigensolvers, EigenSolverConfig, "eigensolvers"), (self.solvers, SolverConfig, "solvers"), (self.propagators, PropagatorConfig, "propagators"), (self.smeared_propagators, SmearedPropagatorConfig, "smeared_propagators"), (self.observable_configs, ObservableConfig, "observable_configs")]:            
-            r, e = executeCodeAndParse(*c)
+        for instance_class, instance_code in self.instances.items():
+            assert instance_class in instance_class_registry
+            r, e = executeCodeAndParse(instance_code, instance_class_registry[instance_class], instance_class)
             if len(e) > 0:
-                raise Exception(f"Executing code for type {c[1]} gave the following exceptions: {e}")
+                raise Exception(f"Executing code for type {instance_class_registry[instance_class].__name__} gave the following exceptions: {e}")
             for a in r:
                 a.setXML(xml)
         
@@ -144,80 +84,38 @@ class State(BaseModel):
         self.gauge.setXMLsingle(xml,job_index,override_path)
         return xml
 
-    def toXMLgeneratorCodeStream(self, stream):        
-        gauge_json = "gauge_json = " + self.gauge.model_dump_json(indent=2)
-        
-        stream.write(f"""
-from femtomeas.meas_config_agent.action_config import ActionConfig
-from femtomeas.meas_config_agent.source_config import SourceConfig
-from femtomeas.meas_config_agent.solver_config import SolverConfig
-from femtomeas.meas_config_agent.propagator_config import PropagatorConfig
-from femtomeas.meas_config_agent.smeared_prop_config import SmearedPropagatorConfig
-from femtomeas.meas_config_agent.observable_config import ObservableConfig
-from femtomeas.meas_config_agent.gauge import GaugeFieldConfig
-from femtomeas.meas_config_agent.eigenvectors import EigenSolverConfig                    
+    def toXMLgeneratorCodeStream(self, stream):
+        #Import modules containing models
+        for instance_class in self.instances.keys():
+            assert instance_class in instance_class_registry
+            cls = instance_class_registry[instance_class]
+            stream.write(get_import_line(cls)+ '\n')
+
+        #Setup and start
+        stream.write(f"""import sys
 from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
-import sys
-
-def actions(xml):
-{indent(self.actions, '    ')}
-    for r in actions:
-        rm = ActionConfig.model_validate(r)
-        rm.setXML(xml)                    
-
-def sources(xml):
-{indent(self.sources, '    ')}
-    for r in sources:
-        rm = SourceConfig.model_validate(r)
-        rm.setXML(xml)
-
-def eigensolvers(xml):
-{indent(self.eigensolvers, '    ')}
-    for r in eigensolvers:
-        rm = EigenSolverConfig.model_validate(r)
-        rm.setXML(xml)              
-
-def solvers(xml):
-{indent(self.solvers, '    ')}
-    for r in solvers:
-        rm = SolverConfig.model_validate(r)
-        rm.setXML(xml)            
-
-def propagators(xml):
-{indent(self.propagators, '    ')}
-    for r in propagators:
-        rm = PropagatorConfig.model_validate(r)
-        rm.setXML(xml)          
-
-def smeared_propagators(xml):
-{indent(self.smeared_propagators, '    ')}
-    for r in smeared_propagators:
-        rm = SmearedPropagatorConfig.model_validate(r)
-        rm.setXML(xml)              
-
-def observables(xml):
-{indent(self.observable_configs, '    ')}
-    for r in observable_configs:
-        rm = ObservableConfig.model_validate(r)
-        rm.setXML(xml)            
-
-def gauge(xml):
-{indent(gauge_json,  '    ')}
-    rm = GaugeFieldConfig.model_validate(gauge_json)
-    rm.setXML(xml)
-
+from femtomeas.meas_config_agent.gauge import GaugeFieldConfig
 
 xml = HadronsXML()
-xml.setRunID(1234) #What does this do?        
+xml.setRunID(1234)        
+        
+""")
 
-actions(xml)
-sources(xml)
-eigensolvers(xml)
-solvers(xml)
-propagators(xml)
-smeared_propagators(xml)
-observables(xml)
-gauge(xml)
+        #Output instance code
+        for instance_class, instance_code in self.instances.items():
+            cls = instance_class_registry[instance_class]
+            stream.write(instance_code)
+            stream.write(f"""
+for item in {instance_class}:
+    rm = {cls.__name__}.model_validate(item)
+    rm.setXML(xml)
+""")
+
+        #GaugeConfig
+        stream.write(f"""
+{"gauge = " + str(self.gauge.model_dump())}
+rm = GaugeFieldConfig.model_validate(gauge)
+rm.setXML(xml)        
 """)
 
     def toXMLgeneratorCode(self, output_file):
@@ -230,3 +128,15 @@ if len(sys.argv) == 0:
 xml.write(sys.argv[1])
 """)                                        
     
+
+def checkpointState(state, filename):
+    #j = json.dumps({k: v.model_dump() for k, v in state.items()}, indent=2)
+    j=json.loads(state.model_dump_json())
+    with open(filename, 'w') as wr:
+        wr.write(json.dumps(j,indent=2))
+
+def reloadStateCheckpoint(filename):
+    Print("Reloading state checkpoint from",filename)
+    with open(filename, 'r') as rd:
+        j = rd.read()
+    return State.model_validate_json(j)    

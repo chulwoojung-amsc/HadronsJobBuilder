@@ -3,7 +3,7 @@ from typing import Literal, Union, List, Optional, Tuple
 from femtomeas.agent_common.common import *
 from .hadrons_xml import HadronsXML
 from .meas_agent_common import Gammas
-from .source_config import momentumStr
+from .source_config_models import momentumStr
 
 mesonSpecialKeywords = Literal["pion","kaon","pseudoscalar","vector","axial-vector"]
 

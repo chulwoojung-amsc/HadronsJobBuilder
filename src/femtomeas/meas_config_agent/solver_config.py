@@ -1,74 +1,72 @@
-from langchain_core.messages import BaseMessage
-from langchain.messages import (
-    SystemMessage,
-    HumanMessage,
-    ToolCall,
-    AIMessage
-)
-import json
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
-from typing import Literal, Union, List, Optional, Tuple
-from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
-from langchain.agents import create_agent
+from typing import Literal, Union, List, Optional, Tuple, ClassVar
 from femtomeas.agent_common.common import *
-from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
-from femtomeas.agent_common.python_output_agent import parameterAgent
+from .hadrons_xml import HadronsXML
+from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo
+from femtomeas.agent_common.python_output_agent import executeCodeAndParse
+from .solver_config_models import SolverConfig, RBPrecCGsolver
+from .state import State
+from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
+from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
+from femtomeas.agent_common.callgraph import Node
+from .action_config import ActionGroup, ActionGroupHandle
+from .eigenvectors import EigenSolverGroup, EigenSolverGroupHandle
 
-class RBPrecCGsolver(BaseModel):
-    """red-black preconditioned conjugate gradient (CG) solver"""
-    type: Literal["RBPrecCG"] = "RBPrecCG"
-    residual: float = Field(...,description="the solver tolerance, residual or stopping condition. Typical values are in the range 1e-6 to 1e-9")
-    maxIteration: NonNegativeInt = Field(...,description="maximum number of solver iterations.")
-    guesser: str = Field(..., description="guesser instance.")
-    
-    def setXML(self,name,action,xml):
-        opt = xml.addModule(name,"MSolver::RBPrecCG")
-        HadronsXML.setValues(opt, [ ("action",action), ("maxIteration", self.maxIteration), ("residual", self.residual), ("guesser", "") ])
+def identifySolvers(model, group_name: str, action_group_name: str,  eigensolver_group_name : str | None, state: State):    
+    action_group_code = state.groups[action_group_name].code
 
-    
-class SolverConfig(BaseModel):
-    name : str = Field(..., description="The name/tag for the solver instance")
-    solver_args: Union[RBPrecCGsolver] = Field(..., description="Parameters of the solver. Each item must have a 'type' field. Valid values are: RBPrecCG", discriminator='type')
-    action: str = Field(..., description="The name/tag of the action instance to use with the solver.")
-    user_info: str = Field(..., description="Additional information (if any) provided by the user on what observables/propagators this solver will be used for")
-    
-    def setXML(self,xml):
-        self.solver_args.setXML(self.name,self.action,xml)
-    
-def identifySolvers(model, state, user_interactions: list[BaseMessage]) -> str:
-    """
-    Parse the list of messages to identify a list of solver instances and their associated parameters
-    """
+    use_evecs = eigensolver_group_name is not None
 
-    role = """identifying the solvers required for computing the lattice QCD propagators for the calculation.
+    #Guesser
+    guesser_directions = """RBPrecCGsolver.guesser: Set this parameter to an empty string."""
 
-Previous agent interactions have identified a set of observables and their required number of propagators. Solvers are required to compute those propagators. A solver instance has a set of parameters such as stopping conditions and the maximum number of iterations. The instance also has an 'action' field, that must be set to the name of one of the action instances identified previously. Each action instance must have one or more solver instances associated with it."""
+    if use_evecs:
+        guesser_directions = f"""RBPrecCGsolver.guesser: This parameter currently supports using previously-computed eigenvectors to accelerate the solver
 
-    parameter_rules = [
-  #solvers
-        """solvers:
-        
-  Use the following workflow:
-  1) If the user has not already done so in their previous responses, ask the user to specify what solver *types* they wish to use for which propagators. This question should not be specific to one observable or propagator; rather you should allow the user the freedom to specify information that could apply to multiple or even all propagators. In your question, list the solvers that you support but do not list their associated parameters. Do not ask the user to provide parameters at this stage.
+      You must use the following workflow:
+   1) Check if any eigensolver instance within the following list exists with the same action name as this solver instance:
+      {state.groups[eigensolver_group_name].code}
+ 
+      Where the complete set of eigensolver instances is defined through the following Python code:
+      {state.instances["eigensolvers"]}
+   
+   2) If no, set guesser to an empty string and terminate this workflow.
+      If yes,
+      2a) ask the user to confirm whether to use these specific eigenvectors for the guesser parameter of this solver.
+      2b) if they confirm, use the eigensolver's "name" parameter for the "guesser" parameter.
+          if they do not confirm, use an empty string.
+   Do not ask the user in general whether they would like to use eigenvectors if available. Only ask them to confirm the use of a specific set of eigenvectors for a specific solver."""
 
-     For example, "Specify the solvers required for the calculation (supported options: <OPTIONS>)."
+    ###############
 
-     If there is only one supported solver you may assume this response and skip this question; however you must explain this to the user using the provideInformationToUser
-        
-  2) Instantiate an instance of SolverConfig for each required solver according to the rules described below.     
 
-  Solver instance rules:
+    role = f"""identifying the lattice QCD solver instances required by user. Solvers invert the QCD Dirac operator for a particular action instance. A solver instance has a set of parameters such as stopping conditions and the maximum number of iterations. The instance also has an 'action' field, that must be set to the name of one of the action instances identified previously.
+
+- Your job is to help the user choose the solver and its parameters for one or more actions in the following subset:
+{action_group_code}
+
+where the parameters of the actions are defined through the following Python code:
+{state.instances["actions"]}
+
+- Ask for the solver type before asking about or mentioning the parameters of that solver. If there is only one supported solver you may assume this response and skip this question; however you must explain this to the user.
+
+-----------------
+Solver instance rules
+-----------------
+You must adhere to the following rules for generating solver instances:
   - A different instance is required for each unique set of solver parameters. Some examples are as follows:
         a) If the user desires both a "sloppy" (loose tolerance) propagator and an "exact" (tight tolerance) propagator for a given action, create two solver instances with the same action but different residuals. This example is appropriate for an AMA style calculation.
         b) If the user specified the RBPrecCG solver type and there are action instances with names "action_1" and "action_2", create two separate solver instances with different values for the 'action' parameter.
     Note that these examples are just some of many possible workflows. Do not assume that the user desires either of these patterns. In particular, do not confuse the user by mentioning the concepts of sloppy or exact solvers unless the user has indicated that they want to do an AMA workflow.
 
-  - Ensure there is at least one solver instance per action instance. 
-  - Create a separate entry for each solver instance, even if the solver appears multiple times with different parameters.
-  - Your list must include every solver instance explicitly mentioned, and only those. Do not invent instances. do not combine instances unless the user explicitly describes them as the same.""",
+  - Solver instances must each have unique parameters. Only instantiate a new solver instance if one with the required parameters does not already exist.
+  - Solver instances should be reused wherever possible. Do not insist that each action have a unique solver.
+  - Your list must include every solver instance explicitly mentioned, and only those. Do not invent instances. do not combine instances unless the user explicitly describes them as the same.
+"""
+
+    parameter_rules = [
   #action
-      """SolverConfig.action: Enter the name of the action associated with this solver instance. Each action should have one or more solvers.
-  - Infer the action name from those associated with the propagators that the user describes
+      """SolverConfig.action: Enter the name of the action associated with this solver instance. This name must be within the provided subset of action names.
   - If there is only one action instance, do not ask the user which action to use.
       """,
 
@@ -77,37 +75,72 @@ Previous agent interactions have identified a set of observables and their requi
   - Never use the same tag for different instances.
   - The tag should include the action name and enough of the parameter values to uniquely distinguish it among the other solver instances, prefering shorter tags if possible.""",
 
-  #user_info
-      """SolverConfig.user_info: You must summarize any information relevant to what observables/propagators this solver will be used for provided by the user.
-  - NEVER ask the user to specify this parameter. NEVER ask the user for additional information.
-  - It is important that any positional information about the propagator be included, for example whether it is the first or second propagator of a two-point function, or if it is a 'spectator' quark in a baryon.
-  - If the user does not specify any details, use an empty string.
-  - For example, if the user specifies that this solver will be used for light quark propagators, enter "use for all light quark propagators" in user_info.""",
-
   #guesser
-      """RBPrecCGsolver.guesser: This parameter currently supports using previously-computed eigenvectors to accelerate the solver
-
-      You must use the following workflow:
-   1) Check if any eigensolver instance exists with the same action name as this solver instance.
-   2) If no, set guesser to an empty string and terminate this workflow.
-      If yes,
-      2a) ask the user to confirm whether to use these specific eigenvectors for the guesser parameter of this solver.
-      2b) if they confirm, use the eigensolver's "name" parameter for the "guesser" parameter.
-          if they do not confirm, use an empty string.
-   Do not ask the user in general whether they would like to use eigenvectors if available. Only ask them to confirm the use of a specific set of eigenvectors for a specific solver."""
-      
+      guesser_directions 
       ]
 
-    additional_user_query_rules = [
-        "When asking for parameters, phrase your questions to refer to groups of propagators that share the same partial set of parameters rather than specific propagators.",
-        "Do not phrase questions specifically referring to action instances; all questions should refer to groups of observables and/or propagators.",
-        "Do not assume that the solvers associated with propagators in these groups will all have the same parameters.",
-        "Do not ask questions to the user that explicitly state that one value can be provided that applies to all instances in the group. If the user wants to specify a parameter that applies to more than one propagator in the group they will do so explicitly.",
-        """Use plurals for parameter names associated with groups containing more than one propagator
-  Examples:
-    "Provide the stopping conditions for the solvers associated with the pion's propagators" (plural)
-    "Provide the maximum number of iterations for the solver associated with the pion's first propagator" (singular)""",
-    "When asking a question referring to a group, ensure your question clearly identifies the group."
+    additional_user_query_rules = [        
     ]
 
-    return parameterAgent(model, SolverConfig, "solvers", role, tools=[], tool_rules=[], parameter_rules=parameter_rules, input_messages=user_interactions, additional_user_query_rules=additional_user_query_rules)
+    user_info_rules = """- You must use an empty string for this parameter."""
+
+
+    act, _ = executeCodeAndParse(action_group_code, InstanceInfo, action_group_name) 
+    used_actions = [ a.instance_tag for a in act ]
+
+    used_eigsol = [""]
+    if use_evecs:
+        esol, _ = executeCodeAndParse(state.groups[eigensolver_group_name].code, InstanceInfo, eigensolver_group_name) 
+        used_eigsol = used_eigsol + [ a.instance_tag for a in esol ]
+
+    def checkAll(solvers):
+        for i in range(len(solvers)):
+            for j in range(i+1, len(solvers)):
+                if solvers[i].action == solvers[j].action and solvers[i].solver_args == solvers[j].solver_args:
+                    return (False, f"Action instances {solvers[i].name} and {solvers[j].name} have the same parameters. Solver instances must be unique.")                    
+
+        #Check it only used actions previously described as being associated with this observable (note, this validator is only applied to *new* instances created by the agent)
+        for s in solvers:
+            if s.action not in used_actions:
+                return (False, f"Action {s.action} is not within the provided subset of actions associated with this group")
+            if isinstance(s.solver_args, RBPrecCGsolver) and s.solver_args.guesser not in used_eigsol:
+                return (False, f"Action {s.guesser} is not within the provided subset of eigensolvers associated with this group")
+            
+        return (True, "")
+    ###################################
+    
+    inst = state.getInstanceCode("solvers")
+
+    updated_solver_code, group_solver_code, _ = parameterAgent(model, SolverConfig, "solvers", inst.value, group_name, None, role, tools=[], \
+                                                            parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=checkAll, additional_user_query_rules=additional_user_query_rules)
+    inst.value = updated_solver_code
+    return group_solver_code
+    
+
+class SolverGroupHandle(BaseGroupHandle):
+    pass
+
+class SolverGroup(BaseGroup):
+    handle_type : ClassVar[type] = SolverGroupHandle
+    code: str = Field(..., description="Code for generating the list of solver instances in the group")
+
+@registerWorkflowOperation(instance_info=("solvers", SolverConfig) )       
+def createSolverGroup(group_name: str, actions: ActionGroupHandle, eigensolver: None | EigenSolverGroupHandle = None)->SolverGroupHandle:
+    checkValidNewGroupName(group_name)
+    def doit(group_name, gactions_group_name: str, geigensolver_group_name : str | None):
+        state, llm_model = getCurrentState()
+        assert gactions_group_name in state.groups and isinstance(state.groups[gactions_group_name], ActionGroup)
+
+        if geigensolver_group_name is not None:
+            assert geigensolver_group_name in state.groups and isinstance(state.groups[geigensolver_group_name], EigenSolverGroup)
+
+        state.groups[group_name] = SolverGroup(code = identifySolvers(llm_model, group_name, gactions_group_name, geigensolver_group_name, state ))   
+        print("createSolverGroup: ", state.groups[group_name].code,  "\nSolvers is now: ", state.instances["solvers"])   
+        return group_name
+
+    if eigensolver is None:
+        return SolverGroupHandle(group_name, Node(f"createSolverGroup_{getUniqueIdx()}", lambda gactions: doit(group_name, gactions, None), input_deps=[actions] ) )
+    else:
+        return SolverGroupHandle(group_name, Node(f"createSolverGroup_{getUniqueIdx()}", lambda gactions, geigens: doit(group_name, gactions, geigens), input_deps=[actions, eigensolver] ) )
+
+

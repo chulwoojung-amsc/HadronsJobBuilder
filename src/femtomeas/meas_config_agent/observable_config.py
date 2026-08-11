@@ -1,185 +1,68 @@
-from langchain_core.messages import BaseMessage
-from langchain.messages import (
-    SystemMessage,
-    HumanMessage,
-    ToolCall,
-    AIMessage
-)
-
-from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
-from typing import Literal, Union, List, Optional, Tuple
-from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
+from typing import Literal, Union, List, Optional, Tuple, ClassVar
 from femtomeas.agent_common.common import *
-from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
-from femtomeas.agent_common.python_output_agent import parameterAgent
-from femtomeas.meas_config_agent.meas_agent_common import Gammas
-from femtomeas.meas_config_agent.source_config import momentumStr
-
-mesonSpecialKeywords = Literal["pion","kaon","pseudoscalar","vector","axial-vector"]
-
-def getMesonGammas(op : mesonSpecialKeywords)-> List[Gammas]:
-    if op in ("pion","kaon","pseudoscalar"):
-        return ["Gamma5"]
-    elif op == "vector":
-        return ["GammaX","GammaY","GammaZ"]
-    elif op == "axial-vector":
-        return ["GammaXGamma5","GammaYGamma5","GammaZGamma5"]
-    else:
-        raise Exception("Unknown meson operator")
+from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo
+from .meas_agent_common import Gammas
+from .observable_config_models import ObservableConfig, getMesonGammas, mesonSpecialKeywords, ContractionSinkNone
+from femtomeas.agent_common.python_output_agent import executeCodeAndParse
+from .state import State
+from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
+from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
+from femtomeas.agent_common.callgraph import Node
+from .propagator_config import PropagatorGroupHandle, PropagatorGroup
+from .smeared_prop_config import SmearedPropagatorGroupHandle, SmearedPropagatorGroup
 
 @tool
 def getMesonGammasTool(op : mesonSpecialKeywords)-> List[Gammas]:
     """Get the list of Gammas (combination of Gamma-matrices in the Euclidean Clifford algebra) associated with a particular meson operator in the list of special meson keywords"""
     return getMesonGammas(op)
 
+def configureMeson2pt(model, group_name: str, prop_group_name:str, state: State):
+    prop_group_code = state.groups[prop_group_name].code
+    is_smeared = isinstance(state.groups[prop_group_name], SmearedPropagatorGroup)
 
-def validateProps(prop_names, state):
-    for p in prop_names:
-        if not state.isValidPropagator(p):
-            return (False, f"-Propagator instance {p} does not exist")
-    return (True,"")
-
-#TODO: cache and reuse these? Don't think there's much need but it makes neater XML
-class ContractionSinkPoint(BaseModel):
-    """A point sink with optional momentum (default zero-momentum)"""
-    type: Literal["contraction_sink_point"] = "contraction_sink_point"
-    momentum : Tuple[float,float,float,float] | None = Field(..., description="An optional four-momentum")
-
-    def setXML(self,obs_name,xml):
-        name = obs_name + "_sinkpoint"
-        snk = xml.addModule(name, "MSink::ScalarPoint")
-        HadronsXML.setValue(snk, "mom", momentumStr(self.momentum))
-        return name
-
-    def check(self, state):        
-        return (True, "")
-      
-class ContractionSinkNone(BaseModel):
-    """Use this sink type when using smeared propagators"""
-    type: Literal["contraction_sink_none"] = "contraction_sink_none"
-
-    def setXML(self,obs_name,xml):
-        return ""
-
-    def check(self, state):        
-        return (True, "")
-
-class Meson2ptInstance(BaseModel):
-    """An instance of a calculation of a meson two-point function with a specific propagator and sink combination"""
-    sink : Union[ContractionSinkNone, ContractionSinkPoint] = Field(..., description="The sink smearing for contracting unsmeared propagators", discriminator='type')
-    propagators : Tuple[str,str] = Field(..., description="The tags of the propagators used to compute the observable")
-    name: str = Field(..., description="The name/tag of the observable instance")        
-
-    def setXML(self, gammas_snk_src, xml):
-        sink_nm = self.sink.setXML(self.name, xml)
-
-        #NB: gamma5-hermiticity used on q2
-        opt = xml.addModule(self.name, "MContraction::Meson")
-        HadronsXML.setValues(opt, [ ("q1", self.propagators[0]), ("q2", self.propagators[1]), ("gammas", gammas_snk_src), ("sink", sink_nm), ("output",f"{self.name}.out") ])
-
-    def check(self, state):
-        lprop_exists = state.isValidPropagator(self.propagators[0])
-        rprop_exists = state.isValidPropagator(self.propagators[1])
-        lsprop_exists = state.isValidSmearedPropagator(self.propagators[0])
-        rsprop_exists = state.isValidSmearedPropagator(self.propagators[1])
-
-        if not lprop_exists and not lsprop_exists:
-            return (False, f"Propagator {self.propagators[0]} does not exist")
-        if not rprop_exists and not rsprop_exists:
-            return (False, f"Propagator {self.propagators[1]} does not exist")
+    #=====================
+    if is_smeared:
+        prop_info = f"""
+  - You are restricted to using smeared propagators from the following subset:
+  {prop_group_code}
         
-        if (lprop_exists and not rprop_exists) or (rprop_exists and not lprop_exists) or (lsprop_exists and not rsprop_exists) or (rsprop_exists and not lsprop_exists):
-            return (False, "Cannot mix smeared and unsmeared propagators in meson contractions")
+  where the complete set of smeared propagators is defined through the following Python code:
+  {state.instances["smeared_propagators"]}
 
-        if (lsprop_exists and not isinstance(self.sink, ContractionSinkNone) ):
-            return (False, "Sink argument must be ContractionSinkNone when using smeared propagators")
-        if (lprop_exists and isinstance(self.sink,ContractionSinkNone) ):
-            return (False, "Sink argument must be different from ContractionSinkNone when using unsmeared propagators")
-        
-        return (True, "")
+  and the corresponding base propagators are defined through
+  {state.instances["propagators"]}
+"""
+    else:
+        prop_info = f""" 
+  - You are restricted to using propagators from the following subset:
+    {prop_group_code}
 
-class Meson2ptConfig(BaseModel):
-    """A meson two-point function or "correlator"."""    
-    type: Literal["meson2pt_config"] = "meson2pt_config"
-
-    instances: List[Meson2ptInstance] = Field(..., description="Instances of this observable with different combinations of propagators")
-    sink_gammas: List[Gammas] = Field(...,description="The list of Gamma-matrix combinations to use at the sink")
-    source_gammas: List[Gammas] = Field(...,description="The list of Gamma-matrix combinations to use at the sink")
+    where the complete set of propagators is defined through the following Python code:
+    {state.instances["propagators"]}
+"""
+  #==========================
     
-    def setXML(self, xml):
-        gammas_snk_src = ""
-        for gsnk in self.sink_gammas:
-            for gsrc in self.source_gammas:
-                gammas_snk_src = gammas_snk_src + f"({gsnk} {gsrc})"
+    role = f"""for building a collection of meson two-point function observable instances and their associated parameters based on your conversation with the user.
 
-        for instance in self.instances:                
-            instance.setXML(gammas_snk_src, xml)
-       
-    def check(self, state):
-        result = True
-        reason = ""
+  Meson two-point functions are typically used to compute particle masses or decay constants (e.g. f_pi).
 
-        if len(self.sink_gammas) == 0 or len(self.source_gammas) == 0:
-            result = False
-            reason += "\nBoth source and sink must have at least one Gamma-matrix combination"
-        
-        for instance in self.instances:        
-            r = instance.check(state)
-            if not r[0]:
-                result = False
-                reason = reason + "\n" + r[1]            
+  This observable requires two propagators, that are contracted together at some timeslice-localized sink. The first propagator argument has quark flow from source to sink, and the second propagator argument has gamma^5-hermiticity applied to it such that the quark flow is from sink to source. We often refer to these propagators by the direction of quark flow into the vertex, i.e. "incoming" for the first quark and "outgoing" for the second.
 
-        return (result, reason)
-   
+  Pion and kaon correlators are both pseudoscalar two-point functions, the difference being that the pion usually has both quarks with the same (light) mass, whereas the kaon has one heavy and one light quark.
+  {prop_info}
+    
+  - Ask the user to specify which combinations of propagators to use from within the subset above.
 
-class WritePropagators(BaseModel):
-    """List of propagators to write to disk and their filestems (filename without .${CFG}.bin extension)"""
-    type: Literal["write_propagators"] = "write_propagators"
-    write_props : List[ Tuple[str,str] ] = Field(..., description="List of propagator name, local filestem pairs")
-
-    def setXML(self, xml):
-        for p in self.write_props:
-            nm = p[0] + "_write"
-            opt = xml.addModule(nm, "MIO::SavePropagator")
-            HadronsXML.setValues(opt, [ ("name", p[0]), ("fileStem", p[1]) ])
-
-    def check(self, state):
-        props = [p[0] for p in self.write_props]
-        return validateProps(props)
-
-
-class ObservableConfig(BaseModel):
-    """An instance of an observable."""
-    obs: Union[Meson2ptConfig, WritePropagators] = Field(...,description="The observation instance and configuration.", discriminator='type')
-
-    def setXML(self, xml):
-        self.obs.setXML(xml)
-
-    def check(self, state):
-        return self.obs.check(state)     
-
-def configureObservables(model, state, user_interactions: list[BaseMessage]) -> ObservableConfig:
-    role = """for building a list of lattice QCD observable instances and their associated parameters based on the conversation history.
-
-    In previous stages of the workflow, agents identified a list of observable types that will be computed alongside some associated information. For each and every observable type in this list you must instantiate the required number of observable instances and determine their propagators and other parameters."""
-
-    parameter_rules = ["""observable_configs:
-
-  Perform the following workflow:
-
-  For every ObservableInfo in the list contained within the message history:
-    1. Parse the user information and background knowledge for the observable
-    2. Determine the ObservableConfig instances required to compute all observable types specified by the user. Follow the rules below.
-    3. Instantiate the ObservableConfig instances, populate their parameters and add them to 'observable_configs',
-
-  Rules for ObservableConfig instances:
-  - A separate ObservableConfig is required for each unique combination of parameters other than propagators (these are treated separately using the "instances" parameter), even if the observable class is the same. For example, if the user wants to compute the pion and vector two-point functions, create two instances of ObservableConfig, one for the pion and one for the vector. 
+-----------------------------    
+ObservableConfig instances rules
+-----------------------------
+  - A separate ObservableConfig is required for each unique combination of parameters, even if the observable class is the same. For example, if the user wants to compute the pion and vector two-point functions, create two instances of ObservableConfig, one for the pion and one for the vector. 
   - Your list must include every observable in the list and only those. Do not invent observables, do not combine observables, and do not add details that are not explicitly provided by the user.
-  - Do not invent or infer any information not explicitly obtained from the message history.""",
-
-    """Meson2ptConfig.instances:
+  - Do not invent or infer any information not explicitly obtained from the message history.  
   - Create a different instance for each unique combination of propagators
-  """,
+    """
+
+    parameter_rules = ["""ObservableConfig.obs must be of type Meson2ptConfig""",
 
     """Meson2ptInstance.name:
   - You must assign a unique tag/name to the instance. Do not ask the user for this parameter
@@ -187,15 +70,12 @@ def configureObservables(model, state, user_interactions: list[BaseMessage]) -> 
   - The tag should include the observable type and enough of the parameter values to uniquely distinguish it among the other instances, prefering shorter tags if possible.""",
                        
     """Meson2ptInstance.propagators:
-  - Use the message history and the skills descriptions of the observables to identify the propagators required to compute this observable and note their 'name' fields. Use only the names of propagators, not of other types of instance (e.g. sources, solvers, actions)
-  - Do not invent names for propagators, use only those assigned to existing propagators in your message history.
+  - Use only the names of propagators from within the list provided above. Do not invent propagator names.
   - You MUST ensure the order of the two propagators in the Tuple matches the role of the two quarks. For example, if the user says "prop_1" should be used as the first (or incoming) quark, ensure it is the first entry.
-  - You can use either two smeared propagators or two unsmeared propagators, but you cannot mix smeared and unsmeared propagators
   """,
 
-    """Meson2ptInstance.sink:
-  - When using smeared propagators, you must use a ContractionSinkNone for this parameter
-  - When using regular/unsmeared propagators, you must choose the sink type according to the user's input. The most common sink type is ContractionSinkPoint (point sink); you may suggest this to the user.""",
+    f"""Meson2ptInstance.sink:
+  - You must use {"ContractionSinkPoint" if not is_smeared else "ContractionSinkNone"} for this parameter"""
                        
     """Meson2ptConfig.sink_gammas and Meson2ptConfig.source_gammas:
   - These are lists of Gamma-matrix combinations for the sink and source locations, respectively.
@@ -214,7 +94,57 @@ def configureObservables(model, state, user_interactions: list[BaseMessage]) -> 
     tools = [getMesonGammasTool]
     tool_rules = []
     
-    def instanceCheck(obs):
+    user_info_rules = "-No user_info is required for this stage."
+
+    prp, _ = executeCodeAndParse(prop_group_code, InstanceInfo, prop_group_name) 
+    used_props = [ a.instance_tag for a in prp ]
+
+    def instanceCheck(obs: ObservableConfig):
+        if obs.obs.type != "meson2pt_config":
+            return (False, f"Observable 'type' must be 'meson2pt_config'")
+        if obs.obs.propagators[0] not in used_props or obs.obs.propagators[1] not in used_props:
+            return (False, f"You must only use propagators from within the provided subset")
+        if is_smeared and not isinstance(obs.obs.sink, ContractionSinkNone):
+            return (False, f"You must use sink=ContractionSinkNone for smeared propagators")
+        if not is_smeared and isinstance(obs.obs.sink, ContractionSinkNone):
+            return (False, f"You must not use sink=ContractionSinkNone for unsmeared propagators")
+        
         return obs.check(state)
 
-    return parameterAgent(model, ObservableConfig, "observable_configs", role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, input_messages=user_interactions, instance_validator=instanceCheck)
+    additional_user_query_rules = [
+      """When asking for the meson or observable type, you MUST list the meson types you know about (pion, kaon etc) but ALSO mention that the user can directly specify the gamma matrices.""",
+      """NEVER insist that the user answer your question in a specific format or ordering."""
+    ]
+
+    inst = state.getInstanceCode("observable_configs")
+    
+    updated_obs_code, obs_group_code, _ = parameterAgent(model, ObservableConfig, "observable_configs", inst.value, group_name, None,\
+                                                        role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, instance_validator=instanceCheck, user_info_rules=user_info_rules, additional_user_query_rules=additional_user_query_rules)
+
+    inst.value = updated_obs_code
+    return obs_group_code
+
+
+class ObservableGroupHandle(BaseGroupHandle):
+    pass
+
+class Meson2ptGroup(BaseGroup):
+    handle_type : ClassVar[type] = ObservableGroupHandle
+    code: str = Field(..., description="Code for generating the list of meson 2pt function instances in the group")
+
+@registerWorkflowOperation(instance_info=("observable_configs", ObservableConfig) )
+def createMeson2ptGroup(group_name: str, propagators: PropagatorGroupHandle | SmearedPropagatorGroupHandle)->ObservableGroupHandle:
+    """Create a Meson2ptGroup and return its handle
+
+The meson two-point function (aka meson correlator) is used to describe the lattice propagation of a meson such as a pion or kaon        
+    """
+    checkValidNewGroupName(group_name)
+    def doit(group_name, gprops_group_name: str): 
+        state, llm_model = getCurrentState()
+        assert gprops_group_name in state.groups and isinstance(state.groups[gprops_group_name], (PropagatorGroup, SmearedPropagatorGroup) )
+        state.groups[group_name] = Meson2ptGroup(code = configureMeson2pt(llm_model, group_name, gprops_group_name, state) )
+        return group_name
+   
+    return ObservableGroupHandle(group_name, Node(f"createMeson2ptGroup_{getUniqueIdx()}", lambda gprops: doit(group_name, gprops), input_deps=[propagators] ) )
+
+

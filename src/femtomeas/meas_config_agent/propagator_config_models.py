@@ -1,6 +1,4 @@
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
-from typing import Literal, Union, List, Optional, Tuple
-from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from .hadrons_xml import HadronsXML
 
 class PropagatorConfig(BaseModel):
