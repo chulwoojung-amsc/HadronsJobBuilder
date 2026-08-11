@@ -5,10 +5,12 @@ from .hadrons_xml import HadronsXML
 from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_output_agent import parameterAgent
 from .meas_agent_common import Gammas
+from .agent_workflow_globals import registerInstanceModel, getInstanceModel
 
 def momentumStr(mom):
     return "0. 0. 0. 0." if mom == None else spaceSeparateSeq(mom)
 
+@registerInstanceModel("sources")
 class PointSource(BaseModel):
     """A point or single-location source"""
     type: Literal["point"] = "point"
@@ -21,7 +23,7 @@ class PointSource(BaseModel):
     def check(self, state, src_names):
         return (True, "")
        
-    
+@registerInstanceModel("sources")    
 class WallSource(BaseModel):
     """A wall or wall-momentum (aka just "momentum") source. A wall source requires just a timeslice, whereas a wall-momentum source needs a momentum also. When describing these sources, list them as two separate types: wall and wall-momentum/momentum"""
     type: Literal["wall"] = "wall"
@@ -37,6 +39,7 @@ class WallSource(BaseModel):
     def check(self, state, src_names):
         return (True, "")
 
+@registerInstanceModel("sources")
 class VolumeMomentumSource(BaseModel):
     """A volume-momentum source aka plane-wave source   src_x = e^{sum_k 2pi i p_k x_k /L_k} """
     type: Literal["volume_momentum"] = "volume_momentum"
@@ -49,7 +52,7 @@ class VolumeMomentumSource(BaseModel):
     def check(self, state, src_names):
         return (True, "")
 
-
+@registerInstanceModel("sources")
 class Z2BandSource(BaseModel):
     """A wall or band source (distinguished by whether it exists on one or more timeslices) with Z2 random numbers"""
     type: Literal["z2"] = "z2"
@@ -65,7 +68,7 @@ class Z2BandSource(BaseModel):
             return (False, "End timeslice is before start timeslice")
         return (True, "")
 
-
+@registerInstanceModel("sources")
 class GaussianSource(BaseModel):
     """
     A gaussian source centered at some position,      [ 1/(sqrt(2*pi)*width)^3 ] exp(-i sum_{i=0}^{3} (x_i - position_i)^2/(2 width^2)  + 2pi i sum_{i=0}^4 mom_i x_i/L_i )    for  tA <= x_3 <= tB
@@ -92,7 +95,7 @@ class GaussianSource(BaseModel):
 
 
 
-
+@registerInstanceModel("sources")
 class SeqGammaSource(BaseModel):
     """A sequential propagator source where a source is constructed from the slice of a propagator between two timeslices with a specific gamma matrix structure and momentum,
        src_x = q_x * theta(x_3 - tA) * theta(tB - x_3) * gamma * exp(i x.mom)
@@ -132,7 +135,7 @@ class SeqGammaSource(BaseModel):
 
 class SourceConfig(BaseModel):
     name : str = Field(..., description="The name/tag for the source")
-    source: Union[PointSource, WallSource,SeqGammaSource,VolumeMomentumSource,Z2BandSource,GaussianSource] = Field(
+    source: getInstanceModel("sources") = Field(
         ..., description="Information about the source.", discriminator='type'
     )
     

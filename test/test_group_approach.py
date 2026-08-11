@@ -23,90 +23,6 @@ import io
 from langchain_openai import ChatOpenAI
 import sys
 
-def subWorkflowAgent(llm_model):
-    role = f"""creating a code snippet that performs the instructions provided by the user during your conversation.
-
-When you begin your workflow, ask the user for instructions.
-
-Your code snippet must employ the functions in the "Registry" below to construct these module instances for this particular observable. These functions act upon a hidden internal state and query the user internally. Your focus should only be on calling these tools in the appropriate order. Follow the "Code rules" below. 
-
-Do not ask the user to confirm or accept your code.
-Never ask the user to provide the code.
-
-If the user asks you questions you must answer them.
-
--------------
-Registry
--------------
-{function_manifest()}
-
--------------
-Code rules
--------------
-- Do not import any modules or functions; assume that the functions in the registry have already been imported.
-- Functions in the registry act on a hidden internal state. The inputs and outputs are merely handles for chaining the logic. Handles must all be consumed within the code snippet; do not store them in any output structures (lists, dictionaries, etc)
-- Your snippet should only perform the user's instructions and nothing else. Do not add code to write outputs.
-- The output handles from your code snippet should be stored in an array named 'results'. Only store the handles for the outputs (i.e. the last calls in any given chain), not the intermediaries.
-
------------
-Tool usage
------------
-- The workflow you define may be one of many. You have been provided tools (listGroupHandles, listWorkflows, retrieveWorkflowCode) that you can use to obtain information about previously-created groups and workflows.
-- If a tool for obtaining a list returns an empty list, interpret this as meaning no elements currently exist. NEVER repeatedly call the same tool over and over if it returns an empty list.
-"""
-
-    user_query_rules = [
-    "You can only ask the user questions about the sequence of registry function calls", 
-    "NEVER ask the user to provide details on groups or their parameters.",
-    "If there are optional steps, you MUST ask the user if they want to perform those steps; NEVER make assumptions.",
-    "You are allowed to choose group names if they have not been specified by the user, unless otherwise directed. Never tell the user that you cannot choose a group name for them."
-    ]
-
-    def printCode(obj):
-        return prettyPrintPydantic(obj.code)
-
-    graphs = None
-    
-    def validator(obj):
-        symtable_in = asteval.make_symbol_table(use_numpy=False, **registry)
-        aeval = asteval.Interpreter(symtable=symtable_in)
-        aeval(obj.code)
-
-        errors = ""
-        if len(aeval.error)>0:
-            for err in aeval.error:
-                e = err.get_error()
-                errors = errors + f"{e[0]}:{e[1]}\n"
-        if len(errors) > 0:
-            print("USED INSTANCE CODE ERRORS", errors)
-            return False, HumanMessage(f"Running your use_instance_code code produced error(s): {errors}")    
-
-        if "results" not in aeval.symtable:
-            print("RESULTS NOT IN CODE")
-            return False, HumanMessage("Your code must produce an array of handles named 'results'")
-        if not isinstance(aeval.symtable['results'], list):
-            print("RESULTS NOT LIST")
-            return False, HumanMessage("Your 'results' output must be an array")
-        for h in aeval.symtable['results']:
-            if not isinstance(h, BaseGroupHandle):
-                print("RESULTS ELEMENT NOT GROUPHANDLE")
-                return False, HumanMessage("Your 'results' output array must contain only handles")
-
-        nonlocal graphs
-        graphs = [ h.parent_node for h in aeval.symtable['results'] ]
-        return True, ""
-
-    obj = parameterAgent(llm_model, AgentOutput, role, tools=[listGroupHandles,listWorkflows, retrieveWorkflowCode], additional_user_query_rules=user_query_rules, human_validation_output_formatter=printCode, validator=validator)
-
-    assert graphs is not None
-    cache={}
-    #Evaluate all output handles with caching in case they are branches from the same chain
-    for g in graphs:
-        g.evalWithCache(cache)
-
-    workflow_name = AgentInput("Provide a name for this workflow")
-    state.workflows[workflow_name] = (graphs, obj.code)
-
 def encodeInstances(list_name, inst):
     if not isinstance(inst, list):
         return encodeInstances(list_name, [inst])
@@ -182,7 +98,7 @@ if __name__ == "__main__":
         graph.eval(enactor=testEnactor)
 
 
-    if 0:
+    if 1:
         #Test source agent
         state = State()
         initializeState(amsc_llm_0t, state)
@@ -192,6 +108,16 @@ if __name__ == "__main__":
         graph = sg1_h.parent_node
         graph.eval(enactor=testEnactor)
 
+
+    if 0:
+        #Test action agent
+        state = State()
+        initializeState(amsc_llm_0t, state)
+
+        sg1_h = createActionGroup("sgroup1")
+            
+        graph = sg1_h.parent_node
+        graph.eval(enactor=testEnactor)
 
     if 0:
         #Test propagator agent

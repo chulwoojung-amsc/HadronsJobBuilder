@@ -1,5 +1,6 @@
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Dict, Any, Union
 from inspect import signature, getdoc, currentframe
+from pydantic import BaseModel
 
 counter = 0 #for unique indexing of graph nodes
 def getUniqueIdx():
@@ -57,3 +58,20 @@ def function_manifest():
         doc = getdoc(fn) or ""
         lines.append(f"- {name}{sig}: {doc}")
     return "\n".join(lines)
+
+
+#Registry for models allowed for Union types within instance models
+instance_model_registry: Dict[str, type[BaseModel] ] = {}
+
+def registerInstanceModel(name: str):
+    def decorator(cls: type[BaseModel]) -> type[BaseModel]:
+        instance_model_registry.setdefault(name, []).append(cls)
+        return cls
+
+    return decorator
+
+def getInstanceModel(name: str) -> Any:
+    models = instance_model_registry[name]
+    if not models:
+        raise ValueError(f"No instance models registered for {name!r}")
+    return Union[tuple(models)]

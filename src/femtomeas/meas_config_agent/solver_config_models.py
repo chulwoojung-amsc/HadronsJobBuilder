@@ -3,7 +3,9 @@ from typing import Literal, Union, List, Optional, Tuple
 from femtomeas.agent_common.common import *
 from .hadrons_xml import HadronsXML
 from femtomeas.agent_common.python_output_agent import parameterAgent
+from .agent_workflow_globals import registerInstanceModel, getInstanceModel
 
+@registerInstanceModel("solvers")
 class RBPrecCGsolver(BaseModel):
     """red-black preconditioned conjugate gradient (CG) solver"""
     type: Literal["RBPrecCG"] = "RBPrecCG"
@@ -18,7 +20,7 @@ class RBPrecCGsolver(BaseModel):
     
 class SolverConfig(BaseModel):
     name : str = Field(..., description="The name/tag for the solver instance")
-    solver_args: Union[RBPrecCGsolver] = Field(..., description="Parameters of the solver. Each item must have a 'type' field. Valid values are: RBPrecCG", discriminator='type')
+    solver_args: getInstanceModel("solvers") = Field(..., description="Parameters of the solver. Each item must have a 'type' field. Valid values are: RBPrecCG", discriminator='type')
     action: str = Field(..., description="The name/tag of the action instance to use with the solver.")
     
     def setXML(self,xml):

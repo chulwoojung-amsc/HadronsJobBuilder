@@ -5,7 +5,9 @@ from .hadrons_xml import HadronsXML
 from femtomeas.agent_common.common import *
 from .meas_agent_common import Gammas
 from .source_config_models import momentumStr
+from .agent_workflow_globals import registerInstanceModel, getInstanceModel
 
+@registerInstanceModel("smeared_prop")
 class WallSmear(BaseModel):
     """A wall smearing with optional momentum,    sum_x e^{+i p . x} prop_sol(x)  """
     type: Literal["wall_smear"] = "wall_smear"
@@ -26,7 +28,7 @@ class WallSmear(BaseModel):
 class SmearedPropagatorConfig(BaseModel):
     name : str = Field(..., description="The name/tag for the smeared propagator")
     input_prop : str = Field(..., description="The name/tag of the input propagator")
-    smearing: Union[WallSmear] = Field(
+    smearing: getInstanceModel("smeared_prop") = Field(
         ..., description="Information about the smearing type", discriminator='type'
     )
     

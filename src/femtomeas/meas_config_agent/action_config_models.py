@@ -2,7 +2,9 @@ from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter
 from typing import Literal, Union, List, Optional, Tuple
 import xml.etree.ElementTree as ET
 from .hadrons_xml import HadronsXML
+from .agent_workflow_globals import registerInstanceModel, getInstanceModel
 
+@registerInstanceModel("actions")
 class DWFaction(BaseModel):
     """A Domain Wall Fermion (DWF) action instance"""
     type: Literal["DWF"] = "DWF"
@@ -14,7 +16,7 @@ class DWFaction(BaseModel):
         opt = xml.addModule(name,"MAction::DWF")
         HadronsXML.setValues(opt, [ ("gauge", "gauge"), ("Ls", self.Ls), ("mass", self.mass), ("M5",self.M5), ("boundary", "1 1 1 -1"), ("twist", "0. 0. 0. 0.") ] )
 
-       
+@registerInstanceModel("actions")       
 class WilsonCloverAction(BaseModel):
     """A Wilson-Clover (aka Clover) action instance"""
     type: Literal["WilsonClover"] = "WilsonClover"
@@ -33,7 +35,7 @@ class WilsonCloverAction(BaseModel):
     
 class ActionConfig(BaseModel):
     name : str = Field(..., description="The name/tag for the action instance")
-    action: Union[DWFaction,WilsonCloverAction] = Field(..., description="Parameters of the action. Each item must have a 'type' field. Valid values are: DWF, WilsonClover",discriminator='type')
+    action: getInstanceModel("actions") = Field(..., description="Parameters of the action. Each item must have a 'type' field.",discriminator='type')
     
     def setXML(self,xml):
         self.action.setXML(self.name, xml)

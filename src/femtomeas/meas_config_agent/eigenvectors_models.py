@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter, 
 from typing import Literal, Union, List, Optional, Tuple
 from .hadrons_xml import HadronsXML
 from femtomeas.agent_common.common import *
-from femtomeas.agent_common.python_output_agent import parameterAgent
+from .agent_workflow_globals import registerInstanceModel, getInstanceModel
 
 class ChebyParams(BaseModel):
     """Parameters of the Chebyshev polynomial"""
@@ -24,7 +24,7 @@ class ChebyParams(BaseModel):
         HadronsXML.setValue(chebyParams, "Npoly", self.Npoly)
        
         
-    
+@registerInstanceModel("eigenvectors")    
 class LanczosEigenSolver(BaseModel):
     """Parameters of the Lanczos eigensolver"""
     type: Literal["LanczosEigenSolver"] = "LanczosEigenSolver"
@@ -93,7 +93,7 @@ class LanczosEigenSolver(BaseModel):
 class EigenSolverConfig(BaseModel):
     name : str = Field(..., description="The name for the eigensolver instance")  #technically this is the name of the guesser but that is irrelevant to the functioning of the agents
     action : str = Field(..., description="The name of the associated action")
-    solver_args: Union[LanczosEigenSolver] = Field(..., description="Parameters of the eigensolver. Each item must have a 'type' field. Valid values are: LanczosEigenSolver", discriminator='type')
+    solver_args: getInstanceModel("eigenvectors") = Field(..., description="Parameters of the eigensolver. Each item must have a 'type' field. Valid values are: LanczosEigenSolver", discriminator='type')
     
     def check(self, state):
         return self.solver_args.check(state, self.action)

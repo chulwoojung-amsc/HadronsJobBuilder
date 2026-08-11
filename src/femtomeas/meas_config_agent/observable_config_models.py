@@ -4,6 +4,7 @@ from femtomeas.agent_common.common import *
 from .hadrons_xml import HadronsXML
 from .meas_agent_common import Gammas
 from .source_config_models import momentumStr
+from .agent_workflow_globals import registerInstanceModel, getInstanceModel
 
 mesonSpecialKeywords = Literal["pion","kaon","pseudoscalar","vector","axial-vector"]
 
@@ -48,6 +49,7 @@ class ContractionSinkNone(BaseModel):
     def check(self, state):        
         return (True, "")
 
+@registerInstanceModel("observable_config")
 class Meson2ptConfig(BaseModel):
     """A meson two-point function or "correlator" instance."""    
     type: Literal["meson2pt_config"] = "meson2pt_config"
@@ -107,6 +109,7 @@ class Meson2ptConfig(BaseModel):
 
         return (result, reason)
 
+@registerInstanceModel("observable_config")
 class WritePropagators(BaseModel):
     """List of propagators to write to disk and their filestems (filename without .${CFG}.bin extension)"""
     type: Literal["write_propagators"] = "write_propagators"
@@ -125,7 +128,7 @@ class WritePropagators(BaseModel):
 
 class ObservableConfig(BaseModel):
     """An instance of an observable."""
-    obs: Union[Meson2ptConfig, WritePropagators] = Field(...,description="The observation instance and configuration.", discriminator='type')
+    obs: getInstanceModel("observable_config") = Field(...,description="The observation instance and configuration.", discriminator='type')
     name : str = Field(..., description="The name/tag for the observable instance")
 
     def setXML(self, xml):
