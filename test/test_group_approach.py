@@ -128,7 +128,7 @@ if __name__ == "__main__":
         graph = sg1_h.parent_node
         graph.eval(enactor=testEnactor)
 
-    if 1:
+    if 0:
         #Test mixed-prec solver agent
         state = State()
         state.instances["actions"] = encodeInstances("actions", [
@@ -144,6 +144,32 @@ if __name__ == "__main__":
             
         graph = sg1_h.parent_node
         graph.eval(enactor=testEnactor)        
+
+    if 1:
+        #Test mixed-prec solver agent with guessers
+        state = State()    
+
+        state.instances["actions"] = encodeInstances("actions", [
+            ActionConfig(name="action_d", precision="Double", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ),
+            ActionConfig(name="action_s", precision="Single", action=DWFaction(Ls=12, mass=0.01, M5=1.8) )
+        ])
+        state.groups["agroup1"] = ActionGroup(code = encodeGroup("agroup1", ["action_d", "action_s"]))
+
+        state.instances["eigensolvers"] = encodeInstances("eigensolvers",  [
+            EigenSolverConfig(name="esol_d", action="action_d", solver_args=LanczosEigenSolver(cheby=ChebyParams(alpha=0.01,beta=3.2,Npoly=101), Nstop=100, Nk=100, Nextra=10, resid=1e-7, MaxIt=20, storeEvecs=False, fileStem="" )),
+            EigenSolverConfig(name="esol_s", action="action_s", solver_args=LanczosEigenSolver(cheby=ChebyParams(alpha=0.01,beta=3.2,Npoly=101), Nstop=100, Nk=100, Nextra=10, resid=1e-7, MaxIt=20, storeEvecs=False, fileStem="" ))
+            ])
+        state.groups["egroup1"] = EigenSolverGroup(code = encodeGroup("egroup1", ["esol_d", "esol_s"]))
+
+        initializeState(amsc_llm_0t, state)
+
+        ag1_h = retrieveGroupHandle("agroup1")        
+        eg1_h = retrieveGroupHandle("egroup1")
+        sg1_h = createSolverGroup("sgroup1", ag1_h, eg1_h)
+            
+        graph = sg1_h.parent_node
+        graph.eval(enactor=testEnactor)        
+
 
     if 0:
         #Test source agent

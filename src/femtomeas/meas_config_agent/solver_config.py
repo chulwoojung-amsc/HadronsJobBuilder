@@ -18,24 +18,17 @@ def identifySolvers(model, group_name: str, action_group_name: str,  eigensolver
     use_evecs = eigensolver_group_name is not None
 
     #Guesser
-    guesser_directions = """RBPrecCGsolver.guesser: Set this parameter to an empty string."""
+    guesser_directions = ""
 
     if use_evecs:
-        guesser_directions = f"""RBPrecCGsolver.guesser: This parameter currently supports using previously-computed eigenvectors to accelerate the solver
-
-      You must use the following workflow:
-   1) Check if any eigensolver instance within the following list exists with the same action name as this solver instance:
-      {state.groups[eigensolver_group_name].code}
+        guesser_directions = f"""
+- Previously-computed eigenvectors can be used as guessers to accelerate the solver. The following eigensolver instances can be used as guessers for the solvers you create:   
+  {state.groups[eigensolver_group_name].code}
  
-      Where the complete set of eigensolver instances is defined through the following Python code:
-      {state.instances["eigensolvers"]}
-   
-   2) If no, set guesser to an empty string and terminate this workflow.
-      If yes,
-      2a) ask the user to confirm whether to use these specific eigenvectors for the guesser parameter of this solver.
-      2b) if they confirm, use the eigensolver's "name" parameter for the "guesser" parameter.
-          if they do not confirm, use an empty string.
-   Do not ask the user in general whether they would like to use eigenvectors if available. Only ask them to confirm the use of a specific set of eigenvectors for a specific solver."""
+  Where the complete set of eigensolver instances is defined through the following Python code:
+  {state.instances["eigensolvers"]}
+
+  - A valid guesser must have the same action instance associated with the eigensolver instance as the solver does. For mixed precision solvers, check the action precision matches."""
 
     ###############
 
@@ -50,6 +43,7 @@ where the parameters of the actions are defined through the following Python cod
 
 - Ask for the solver type before asking about or mentioning the parameters of that solver. If there is only one supported solver you may assume this response and skip this question; however you must explain this to the user.
 
+{guesser_directions}
 -----------------
 Solver instance rules
 -----------------
@@ -75,10 +69,7 @@ You must adhere to the following rules for generating solver instances:
   #name
       """SolverConfig.name: You must choose a unique tag/name to the solver instance. Assign this automatically, never ask the user (although they may choose to suggest names if they desire).
   - Never use the same tag for different instances.
-  - The tag should include the action name and enough of the parameter values to uniquely distinguish it among the other solver instances, prefering shorter tags if possible.""",
-
-  #guesser
-      guesser_directions 
+  - The tag should include the action name and enough of the parameter values to uniquely distinguish it among the other solver instances, prefering shorter tags if possible."""
       ]
 
     additional_user_query_rules = [        
@@ -124,7 +115,7 @@ class SolverGroup(BaseGroup):
     code: str = Field(..., description="Code for generating the list of solver instances in the group")
 
 @registerWorkflowOperation(instance_info=("solvers", SolverConfig) )       
-def createSolverGroup(group_name: str, actions: ActionGroupHandle, eigensolver: None | EigenSolverGroupHandle = None)->SolverGroupHandle:
+def createSolverGroup(group_name: str, actions: ActionGroupHandle, eigensolver: None | EigenSolverGroupHandle = None)->SolverGroupHandle:    
     checkValidNewGroupName(group_name)
     def doit(group_name, gactions_group_name: str, geigensolver_group_name : str | None):
         state, llm_model = getCurrentState()

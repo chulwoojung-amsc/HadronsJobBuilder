@@ -312,7 +312,8 @@ def parameterModelCall(llm_model, structured_output_model : BaseModel,
                        role: str,                    
                        parameter_rules : List[str] = [],
                        input_messages = [ HumanMessage("Start your workflow") ],
-                       validator : Callable | None = None                   
+                       validator : Callable | None = None,
+                       do_human_validation = True                   
                    ):
 
     output_type_name = type(structured_output_model).__name__
@@ -371,16 +372,18 @@ def parameterModelCall(llm_model, structured_output_model : BaseModel,
                 print("VALIDATION FAIL",valid)
                 user_interactions.append(HumanMessage(f"Your previous response failed validation due to: {valid[1]}"))
                 continue
+
+        if do_human_validation:
+            #Human validation            
+            accepted = queryYesNo("Is the following correct?", "\n" + prettyPrintPydantic(obj))
             
-        #Human validation            
-        accepted = queryYesNo("Is the following correct?", "\n" + prettyPrintPydantic(obj))
-        
-        if(accepted == False):
-            reason = AgentInput("Explain what is wrong: ")            
-            user_interactions.append(HumanMessage(f"Your previous response was not accepted for the following reason: {reason}"))
-            continue
+            if(accepted == False):
+                reason = AgentInput("Explain what is wrong: ")            
+                user_interactions.append(HumanMessage(f"Your previous response was not accepted for the following reason: {reason}"))
+                continue
+            else:
+                break #passed human and automatic validation
         else:
-            break
-        
+            break #passed automatic validation
    
     return obj
