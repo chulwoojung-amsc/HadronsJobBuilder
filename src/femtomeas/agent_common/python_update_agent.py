@@ -89,6 +89,14 @@ class AgentOutput(BaseModel):
     use_instance_code: str = Field(..., description="Code for generating the final list of instances required")
     done: bool = Field(..., description="The agent's workflow is complete")
 
+class AgentOutputMultiQ(BaseModel):
+    """Structured output for the agent"""    
+    questions_to_user: List[str] = Field(..., description="Questions posed to the user")
+    answer_to_user: str = Field(..., description="An answer to a question posed by the user")
+    scratchpad_note: str = Field(..., description="Notes kept by the agent, appended to the current scratchpad")
+    new_instance_code: str = Field(..., description="The current output code for instantiating the new instances")    
+    use_instance_code: str = Field(..., description="Code for generating the final list of instances required")
+    done: bool = Field(..., description="The agent's workflow is complete")
 
 class AgentState:
     def reset(self):                
@@ -260,7 +268,7 @@ def codeAgentRecordingCodeRules(output_type_name, instantiation_list_name, is_co
 
     return out        
 
-def parameterAgentSingleQ(llm_model, structured_output_model : BaseModel,                    
+def parameterAgent(llm_model, structured_output_model : BaseModel,                    
                    instantiation_list_name: str,
                    instantiation_list_code_input: str | None,               
                    used_instance_list_name: str,
@@ -273,7 +281,8 @@ def parameterAgentSingleQ(llm_model, structured_output_model : BaseModel,
                    additional_user_query_rules = [],                   
                    instance_validator : Callable | None = None,
                    group_validator : Callable | None = None,
-                   used_instance_list_checker : Callable = lambda m: True #a custom checked for instances referred to in the used-instance list to test whether they remain valid
+                   used_instance_list_checker : Callable = lambda m: True, #a custom checked for instances referred to in the used-instance list to test whether they remain valid
+                   multi_question_mode: bool = False #the agent can ask multiple questions at the same time (user still answers consecutively)
                    ):
 
     agent_state.reset()    
@@ -304,12 +313,14 @@ New used-instance code:
     instantiation_list_code_base = instantiation_list_code_input if instantiation_list_code_input is not None else f"{instantiation_list_name} = []"
 
     output_type_name = type(structured_output_model).__name__    
+    agent_model_type = AgentOutputMultiQ if multi_question_mode else AgentOutput
+
 
     sys = f"""
     You are a conversational agent responsible for {role}
     
-    On each turn of the conversation you must respond with structured output in the AgentOutput schema:
-        {AgentOutput.model_json_schema() }
+    On each turn of the conversation you must respond with structured output in the {agent_model_type.__name__} schema:
+        {agent_model_type.model_json_schema() }
 
     The overall goal of your conversation is to write Python code snippets for instantiating any *new* instances of the {output_type_name} structure required. 
     - The schema for the instances is provided in the "Schema for {output_type_name}" section below.
@@ -325,9 +336,10 @@ New used-instance code:
         - Otherwise set the "done" parameter to False. 
 
     If your workflow is not complete (i.e. your code does not instantiate all required instances or sets all required parameters) you must continue to ask questions to obtain the missing parameters and instances:    
-        - Use the output field "answer_to_user" to answer a question that the user posed, if any. If the user asks a question, your response must contain an answer.
-        - Use the output field "question_to_user" to ask a question.
-      These outputs will be sent to the user and their response will be contained in the next message you receive. Follow the "Question/answer output rules" below when formating these outputs.
+        - Use the output field "answer_to_user" to answer a question that the user posed, if any. If the user asks a question, your response must contain an answer.   
+        {"""- Use the output field "question_to_user" to ask a question.""" if not multi_question_mode else
+         """- Use the output field "questions_to_user" to ask questions."""}
+      These outputs will be sent to the user and their response{"(s)" if multi_question_mode else ""} will be contained in the next message you receive. Follow the "Question/answer output rules" below when formating these outputs.
       
     Use the "scratchpad_note" field of your output to record notes to yourself (these are not visible to the user). Refer to the scratchpad rules below for appropriate content.
             
@@ -336,7 +348,7 @@ New used-instance code:
     ----------------------------------------------
     {instantiation_list_code_base}
 
-{questionAndAnswerRulesSingleQ(additional_user_query_rules)}
+{questionAndAnswerRulesMultiQ(additional_user_query_rules) if multi_question_mode else questionAndAnswerRulesSingleQ(additional_user_query_rules)}
     
 {generalParameterRules(output_type_name)}
 {codeAgentExtraParameterRules()}
@@ -393,7 +405,7 @@ Current scratchpad contents
         return prompt
     
     all_tools = tools.copy()
-    agent = create_agent(model=llm_model, tools=all_tools, middleware=[system_prompt], response_format=AgentOutput)
+    agent = create_agent(model=llm_model, tools=all_tools, middleware=[system_prompt], response_format=agent_model_type)
 
     user_interactions = input_messages.copy()
     accepted = False
@@ -405,256 +417,19 @@ Current scratchpad contents
         #Invoke the agent
         try:
             resp = agent.invoke({ "messages": user_interactions }, config=config)
-            resp_struct = getStructuredResponse(resp, AgentOutput)
+            resp_struct = getStructuredResponse(resp, agent_model_type)
         except Exception as e:
             print("EXCEPTION",e)
             user_interactions.append(HumanMessage(f"Encountered an error: {e}"))
             continue
 
-        if resp_struct.done and len(resp_struct.question_to_user) > 0:
-            user_interactions.append(HumanMessage("You cannot ask a question if 'done' is set to True"))
-            print("DONE TRUE BUT QUESTION",resp_struct.question_to_user)
-            continue
-        if not resp_struct.done and len(resp_struct.question_to_user) == 0:
-            user_interactions.append(HumanMessage("Your response must include a question unless you are done"))
-            print("NO QUESTION IN RESPONSE")
-            continue        
-
-        print("OUTPUT", prettyPrintPydantic(resp_struct), "\n\n" )
-
-        if resp_struct.done:
-            print("DONE")
-
-            #Automatic validation
-            valid, fail_message = autoValidateNewInstanceCode(resp_struct.new_instance_code, instance_validator, group_validator, structured_output_model, instantiation_list_name)
-            if not valid:
-                user_interactions.append(fail_message)
-                continue 
-
-            valid, fail_message = autoValidateUsedInstanceCode(resp_struct.use_instance_code, used_instance_list_name, do_append_to_used_instances, resp_struct.new_instance_code, instantiation_list_name, instantiation_list_code_base, structured_output_model)
-            if not valid:
-                user_interactions.append(fail_message)
-                continue             
-
-            #Allow the agent to make a closing statement, e.g. in response to fixing a previous validation error
-            if len(resp_struct.answer_to_user) > 0:                                            
-                user_interactions.append(AIMessage(resp_struct.answer_to_user))
-                AgentPrint(resp_struct.answer_to_user)
-
-            #Human validation
-            accepted = queryYesNo("Is the following code for generating *new* instances correct?", "\n" + prettyPrintPythonCode(resp_struct.new_instance_code) + "\n")            
-
-            if(accepted == False):
-                reason = AgentInput("Explain what is wrong: ")
-                user_interactions.append(HumanMessage(f"Your previous new_instance_code output was not accepted for the following reason: {reason}"))
-                continue
-
-            accepted = queryYesNo("Is the following code for listing the names of the used instances correct?", "\n" + prettyPrintPythonCode(resp_struct.use_instance_code) + "\n")      
-
-            if(accepted == False):
-                reason = AgentInput("Explain what is wrong: ")
-                user_interactions.append(HumanMessage(f"Your previous use_instance_code output was not accepted for the following reason: {reason}"))
-                continue
-            
-            new_instance_code = resp_struct.new_instance_code
-            use_instance_code = resp_struct.use_instance_code
-            break
+        questions = resp_struct.questions_to_user if multi_question_mode else resp_struct.question_to_user
         
-        else:
-            print("RESP")
-
-            #Append any notes to the scratchpad
-            if len(resp_struct.scratchpad_note) > 0:
-                agent_state.scratch.append(resp_struct.scratchpad_note)
-
-            #Set the working params struct for the next round of prompting
-            agent_state.code = resp_struct.new_instance_code
-
-            #Compose the AI message to the user
-            ai_msg = resp_struct.answer_to_user + ("\n\n" if len(resp_struct.answer_to_user) > 0 else "") + resp_struct.question_to_user
-
-            #Add it to the message history
-            user_interactions.append(AIMessage(ai_msg))
-
-            #Obtain the user response
-            user_resp = AgentInput(ai_msg)
-            user_interactions.append(HumanMessage(user_resp))
-    return instantiation_list_code_base + "\n" + new_instance_code, \
-           used_instance_list_code_input + "\n" + use_instance_code if do_append_to_used_instances else use_instance_code,  \
-           invalidate_remaining_workflow
-
-
-
-class AgentOutputMultiQ(BaseModel):
-    """Structured output for the agent"""    
-    questions_to_user: List[str] = Field(..., description="Questions posed to the user")
-    answer_to_user: str = Field(..., description="An answer to a question posed by the user")
-    scratchpad_note: str = Field(..., description="Notes kept by the agent, appended to the current scratchpad")
-    new_instance_code: str = Field(..., description="The current output code for instantiating the new instances")    
-    use_instance_code: str = Field(..., description="Code for generating the final list of instances required")
-    done: bool = Field(..., description="The agent's workflow is complete")
-
-
-
-def parameterAgentMultiQ(llm_model, structured_output_model : BaseModel,                    
-                   instantiation_list_name: str,
-                   instantiation_list_code_input: str | None,               
-                   used_instance_list_name: str,
-                   used_instance_list_code_input: str | None,
-                   role: str, tools,
-                   tool_rules : List[str] = [],
-                   parameter_rules : List[str] = [],
-                   user_info_rules : str | None = None, #extra rules for populating the "user_info" field of InstanceInfo
-                   input_messages = [ HumanMessage("Start your workflow") ],
-                   additional_user_query_rules = [],                   
-                   instance_validator : Callable | None = None,
-                   group_validator : Callable | None = None,
-                   used_instance_list_checker : Callable = lambda m: True #a custom checked for instances referred to in the used-instance list to test whether they remain valid
-                   ):
-
-    agent_state.reset()    
-    do_append_to_new_instances = instantiation_list_code_input is not None
-    invalidate_remaining_workflow = False #whether changes here invalidate later steps in the workflow
-
-    do_append_to_used_instances = False
-    if used_instance_list_code_input is not None:
-        do_append_to_used_instances = queryYesNo("The used module instance list already exists for this observable, do you wish to append to this list? Answering 'n' will overwrite the list and require later workflow stages to be repeated for this observable.", f"\nExisting code\n{used_instance_list_code_input}")
-        if not do_append_to_new_instances: #if we overwrite the used module instance list we need to redo later workflow stages
-            invalidate_remaining_workflow = True
-
-    ################################################
-    #if we are appending, first check to ensure all the existing used-instance entries remain valid, if not remove them
-    if do_append_to_used_instances:
-        v, c = checkUsedInstances(used_instance_list_name, used_instance_list_code_input, structured_output_model,  instantiation_list_name, used_instance_list_code_input, used_instance_list_checker)
-        if not v:
-            AgentPrint(f"""I have detected that some entries from the previous used-instance list have become invalid and have removed them. Ensure that you include replacements for these if needed.
-Old used-instance code:
-{used_instance_list_code_input}
-New used-instance code:
-{v}            
-"""
-            )
-            used_instance_list_code_input = c
-    ##################################################  
-
-    instantiation_list_code_base = instantiation_list_code_input if instantiation_list_code_input is not None else f"{instantiation_list_name} = []"
-
-    output_type_name = type(structured_output_model).__name__
-
-    sys = f"""
-    You are a conversational agent responsible for {role}
-    
-    On each turn of the conversation you must respond with structured output in the AgentOutputMultiQ schema:
-        {AgentOutputMultiQ.model_json_schema() }
-
-    The overall goal of your conversation is to write Python code snippets for instantiating any *new* instances of the {output_type_name} structure required. 
-    - The schema for the instances is provided in the "Schema for {output_type_name}" section below.
-    - Existing instances are generated according to the code snippet provided in the "Existing {output_type_name} instantiation code" section below. 
-    - You must only instantiate new instances if no existing instance matches.
-    - New instances must be appended to the list '{instantiation_list_name}'. Do not create this list; assume that your code snippet will be appended to the existing code.    
-    - New instances must be generated according to the "General Parameter Rules" below.
-    - Your current working draft of the code for generating new instances is provided in the "Draft new {output_type_name} instantiation code" section below. 
-    - You must always record the current working draft of the code for generating new {output_type_name} instances in the "new_instance_code" field of your output. Refer to the "Recording code output" rules below for how to write this code.
-    
-    Each time you receive a message from the user that is not a question, review your current knowledge of the required parameters for the output {output_type_name} structures. 
-        - If your code generates all required instances and populates them with correct values for all required parameters, perform the "Completion workflow" described below.
-        - Otherwise set the "done" parameter to False. 
-
-    If your workflow is not complete (i.e. your code does not instantiate all required instances or sets all required parameters) you must continue to ask questions to obtain the missing parameters and instances:    
-        - Use the output field "answer_to_user" to answer a question that the user posed, if any. If the user asks a question, your response must contain an answer.
-        - Use the output field "questions_to_user" to ask questions.
-      These outputs will be sent to the user and their response(s) will be contained in the next message you receive. Follow the "Question/answer output rules" below when formating these outputs.
-      
-    Use the "scratchpad_note" field of your output to record notes to yourself (these are not visible to the user). Refer to the scratchpad rules below for appropriate content.
-            
-    ----------------------------------------------
-    Existing {output_type_name} instantiation code
-    ----------------------------------------------
-    {instantiation_list_code_base}
-
-{questionAndAnswerRulesMultiQ(additional_user_query_rules)}
-    
-{generalParameterRules(output_type_name)}
-{codeAgentExtraParameterRules()}
-
-{toolRules(tools, tool_rules)}
-    
-{scratchpadRules()}
-
-{codeAgentRecordingCodeRules(output_type_name, instantiation_list_name)}
-
-{specificParameterRules(parameter_rules)}    
-
-{validationFailureRules()}       
-    ------------------------------
-    Schema for {output_type_name} 
-    ------------------------------
-    Your "new_instance_code" output must produce jsonable Python dictionaries according to the following schema:
-{json.dumps(structured_output_model.model_json_schema())}
-
-    ------------------------------
-    Completion workflow
-    ------------------------------
-    When your conversation workflow is complete, perform the following actions:
-    
-    1) Write a Python code snippet in your "use_instance_code" output field that {"appends to an existing" if do_append_to_used_instances else "creates a"} list named {used_instance_list_name} of InstanceInfo objects. Use the following schema:
-{json.dumps(InstanceInfo.model_json_schema())}     
-        
-       For the "instance_tag"s insert the "name" fields of the set of instances required.
-         - These names must belong to instances within {instantiation_list_name}; do not create any new instances.
-         - List only the names associated with the set of instances required by the user in the current conversation. Do not include other instances from {instantiation_list_name}.
-         - Do not use if statements to isolate instances within {instantiation_list_name} as this list may grow in the future.
-
-       For the "user_info" field, insert any information about how/where this instance will be used.     
-{promptStringList([user_info_rules],7) if user_info_rules is not None else ""}
-
-    2) Set the "done" parameter in your output to True indicating that your workflow is complete.
-    """
-
-    print("BASE PROMPT ",sys)
-
-    config = {"configurable": {"thread_id": "1", "stream" : False}}
-
-    @dynamic_prompt
-    def system_prompt(request: ModelRequest) -> str:
-        prompt = sys + f"""
-------------------------------------------------
-Draft new {output_type_name} instantiation code
-------------------------------------------------
-{agent_state.code}
-
----------------------------
-Current scratchpad contents
----------------------------        
-{listEnumerateStr(agent_state.scratch)}   
-        """
-        return prompt
-    
-    all_tools = tools.copy()
-    agent = create_agent(model=llm_model, tools=all_tools, middleware=[system_prompt], response_format=AgentOutputMultiQ)
-
-    user_interactions = input_messages.copy()
-    accepted = False
-    new_instance_code = None
-    use_instance_code = None
-
-    print("AGENT START")
-    while(accepted == False):
-        #Invoke the agent
-        try:
-            resp = agent.invoke({ "messages": user_interactions }, config=config)
-            print("RESP TEST ", resp)
-            resp_struct = getStructuredResponse(resp, AgentOutputMultiQ)
-        except Exception as e:
-            print("EXCEPTION",e)
-            user_interactions.append(HumanMessage(f"Encountered an error: {e}"))
-            continue
-
-        if resp_struct.done and len(resp_struct.questions_to_user) > 0:
+        if resp_struct.done and len(questions) > 0:
             user_interactions.append(HumanMessage("You cannot ask a question if 'done' is set to True"))
-            print("DONE TRUE BUT QUESTION",resp_struct.questions_to_user)
+            print("DONE TRUE BUT QUESTION",questions)
             continue
-        if not resp_struct.done and len(resp_struct.questions_to_user) == 0:
+        if not resp_struct.done and len(questions) == 0:
             user_interactions.append(HumanMessage("Your response must include a question unless you are done"))
             print("NO QUESTION IN RESPONSE")
             continue        
@@ -711,52 +486,29 @@ Current scratchpad contents
 
             #Compose the AI message to the user
             ai_msg = resp_struct.answer_to_user + ("\n\n" if len(resp_struct.answer_to_user) > 0 else "")
-            for i, q in enumerate(resp_struct.questions_to_user):
-                ai_msg += f"{i+1}) {q}\n"            
+            if multi_question_mode:
+                for i, q in enumerate(resp_struct.questions_to_user):
+                    ai_msg += f"{i+1}) {q}\n"      
+            else:
+                ai_msg += resp_struct.question_to_user
 
             #Add it to the message history
             user_interactions.append(AIMessage(ai_msg))
 
             #Obtain the user response
-            user_resp = AgentInputMulti(resp_struct.questions_to_user, preamble=resp_struct.answer_to_user if len(resp_struct.answer_to_user) else None)
-            user_msg = ""
-            for r in user_resp:
-                user_msg += "---------------------------------------------\n" + r + "\n"
+            if multi_question_mode:
+                user_resp = AgentInputMulti(resp_struct.questions_to_user, preamble=resp_struct.answer_to_user if len(resp_struct.answer_to_user) else None)
+                user_msg = ""
+                for r in user_resp:
+                    user_msg += "---------------------------------------------\n" + r + "\n"                
+            else:
+                user_msg = AgentInput(ai_msg)
+
             user_interactions.append(HumanMessage(user_msg))
 
     return instantiation_list_code_base + "\n" + new_instance_code, \
            used_instance_list_code_input + "\n" + use_instance_code if do_append_to_used_instances else use_instance_code,  \
            invalidate_remaining_workflow
-
-
-
-
-def parameterAgent(llm_model, structured_output_model : BaseModel,                    
-                   instantiation_list_name: str,
-                   instantiation_list_code_input: str | None,               
-                   used_instance_list_name: str,
-                   used_instance_list_code_input: str | None,
-                   role: str, tools,
-                   tool_rules : List[str] = [],
-                   parameter_rules : List[str] = [],
-                   user_info_rules : str | None = None, #extra rules for populating the "user_info" field of InstanceInfo
-                   input_messages = [ HumanMessage("Start your workflow") ],
-                   additional_user_query_rules = [],                   
-                   instance_validator : Callable | None = None,
-                   group_validator : Callable | None = None,
-                   used_instance_list_checker : Callable = lambda m: True, #a custom checked for instances referred to in the used-instance list to test whether they remain valid
-                   multi_question_mode: bool = True #the agent can ask multiple questions at the same time (user still answers consecutively)
-                   ):
-    if multi_question_mode:
-        return parameterAgentMultiQ(llm_model, structured_output_model, instantiation_list_name,
-                                    instantiation_list_code_input, used_instance_list_name, used_instance_list_code_input,
-                                    role, tools, tool_rules, parameter_rules, user_info_rules, input_messages, additional_user_query_rules,
-                                    instance_validator, group_validator, used_instance_list_checker)
-    else:
-        return parameterAgentSingleQ(llm_model, structured_output_model, instantiation_list_name,
-                                    instantiation_list_code_input, used_instance_list_name, used_instance_list_code_input,
-                                    role, tools, tool_rules, parameter_rules, user_info_rules, input_messages, additional_user_query_rules,
-                                    instance_validator, group_validator, used_instance_list_checker)
 
 
 

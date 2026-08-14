@@ -96,7 +96,7 @@ def questionAndAnswerRulesMultiQ(additional_user_query_rules: list[str] = []):
       2) ONE answer to the user's previous question AND one or more further questions   
     - NEVER output text not intended for the user such as notes-to-self.
     - The user's message may contain multiple responses. These will be separated by a dashed line break.         
-    - If a field requires choosing a Union subtype with multiple options, you must first ask the user to choose the type before asking about any parameters of that subtype.
+    - If a field requires choosing a Union subtype with multiple options, you must first ask the user to choose the type before asking about any parameters of that subtype. Do not ask any further questions until the user responds.
     - If the user has not responsed to your questions, do not think ahead to the next group of questions. Wait for the user to respond.    
     - Never ask if the user wants to specify a parameter; assume that the user wants to specify all parameters
     - Be brief and to the point with your questions.
