@@ -15,9 +15,6 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import before_model, after_model, AgentState, dynamic_prompt, ModelRequest
 import json
 from .common import queryYesNo, prettyPrintPydantic, prettyPrintPythonCode, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput, InputMulti as AgentInputMulti
-from langchain.tools import tool
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.runtime import Runtime
 import re
 
 from typing import Callable
@@ -28,11 +25,11 @@ from langchain.agents.middleware import (
     AgentState,
     ExtendedModelResponse
 )
-from langgraph.types import Command
-from typing_extensions import NotRequired
 import asteval
 
 from .python_output_agent import indentExceptFirst, promptStringList, listEnumerateStr, executeCode, executeCodeAndParse
+from .agent_base import questionAndAnswerRulesSingleQ, questionAndAnswerRulesMultiQ, generalParameterRules, specificParameterRules, toolRules, scratchpadRules, validationFailureRules
+
 
 class InstanceInfo(BaseModel):
     instance_tag: str = Field(..., description="The name/tag of the instance")
@@ -211,6 +208,58 @@ def autoValidateUsedInstanceCode(use_instance_code, used_instance_list_name, do_
     return True, None
 
 
+
+def codeAgentExtraParameterRules(is_conversational: bool = True):
+    out = f"""
+    - The user may either provide you with one or more explicit parameter choices, or they might provide you with instructions on how to instantiate a set of instances with different values, for example by providing a selection criteria.
+        - If the user provides a selection criteria:
+            - You must write code to generate *all* values that satisfy this criteria. Do this by writing appropriate loops in your code output. Ask the user for the loop bounds if you do not know."""
+    if is_conversational:
+            out += """
+            - Do not ask the user to provide values that satisfy the criteria or to confirm specific solutions."""
+
+    out += """
+            - Do not try to identify solutions to the criteria yourself.
+        - *Do not insist* that the user provide explicit values for parameters. 
+"""
+    return out
+
+
+def codeAgentRecordingCodeRules(output_type_name, instantiation_list_name, is_conversational: bool = True):
+    out = f"""    -------------------------------------------
+    Recording code output rules:
+    These rules apply to the code for generating the {output_type_name} structures you must record in the "new_instance_code" field of your output
+    ------------------------------------------    
+    - The code field must contain correct Python inside a string.
+    - The code must produce jsonable Python dictionaries according to schema below.
+    - Use Python True/False for boolean fields
+    - Use Python None instead of "null"
+    - You cannot use any libraries within the code. 
+    - The {output_type_name} structure instances must be appended to a list with name '{instantiation_list_name}'. This list must contain ONLY {output_type_name} structures.
+    - You must use for loops to iterate over parameter values if there are more than 3 values.
+    - Try to make the code as short as possible while still remaininng intelligible. For instance:
+        - If you have a loop involving {output_type_name} that share multiple parameters, instantiate a base instance outside the loop with those static parameters set, and take copies within the loop to set the values that differ.
+        - Even if not in a loop, if different instances have multiple shared parameters, prefer a base instance with copies versus writing out the full set of parameters again.
+    - You must follow all rules (general and specific) provided in this prompt regarding the {output_type_name} parameters you record. 
+    - The code you write must only pertain to creating {output_type_name} structures.
+    - Your code cannot call any of the tools you have access to."""
+
+    if is_conversational:
+        out += f"""
+    - As your conversation with the user progresses, you must write code to create instances of {output_type_name} and fill their parameters in the "new_instance_code" field. Never write code for any purpose other than instantiating and populating parameters of {output_type_name}.
+    - The structure instances must follow the {output_type_name} schema for all fields and types, with the exception of unknown parameters. You must include all fields, even if they can have default values.
+    - For parameters that the user has not yet specified you must include the field but assign the value "<UNKNOWN>", even if the parameter is not a string parameter.
+    - You must output the updated code in every response, even if some parameters are still unknown.
+    - If recording a parameter that belongs to one of a list of structure instances and you don't yet know how many instances will be needed, instantiate a single instance and record the parameter there.
+    - Never ask the user to confirm your code."""
+
+    else:
+        out += f"""
+    - Never write code to "new_instance_code" for any purpose other than instantiating and populating parameters of {output_type_name}.
+    - The structure instances must follow the {output_type_name} schema for all fields and types. You must include all fields, even if they can have default values."""
+
+    return out        
+
 def parameterAgentSingleQ(llm_model, structured_output_model : BaseModel,                    
                    instantiation_list_name: str,
                    instantiation_list_code_input: str | None,               
@@ -254,11 +303,7 @@ New used-instance code:
 
     instantiation_list_code_base = instantiation_list_code_input if instantiation_list_code_input is not None else f"{instantiation_list_name} = []"
 
-    output_type_name = type(structured_output_model).__name__
-    param_rules_header = """    -------------------------------------------
-    Additional rules for specific parameters:   
-    -------------------------------------------
-    """ if len(parameter_rules) > 0 else "" 
+    output_type_name = type(structured_output_model).__name__    
 
     sys = f"""
     You are a conversational agent responsible for {role}
@@ -291,96 +336,20 @@ New used-instance code:
     ----------------------------------------------
     {instantiation_list_code_base}
 
-    -----------------------------------------
-    Question and answer output rules
-    -----------------------------------------
-    - If your workflow is done and you have set the "done" parameter in your output, never output an answer or a question.
-    - If your workflow is not done, your output to the user *must* include either:
-      1) ONE question
-      2) ONE answer to the user's previous question AND ONE further question    
-    - NEVER output text not intended for the user such as notes-to-self.    
-    - Never ask more than one question at a time. Always wait for the user to respond before asking your next question.
-    - If the user has not responsed to your question, do not think ahead to the next question. Wait for the user to respond.
+{questionAndAnswerRulesSingleQ(additional_user_query_rules)}
     
-    - Never ask if the user wants to specify a parameter; assume that the user wants to specify all parameters
-    - Be brief and to the point with your question, and do not ask for more than one value in a single question.
-    - If you ask a question where the user is asked to choose between a set of known options, first obtain the list of options (calling any appropriate tools) then list those options alongside the question in your response. If there are more than 6 choices, list only the first 6 and indicate that there are more options.
-    - If the user responds to a query with an invalid response, your response should explain that the choice is invalid and ask the question again. Never ask a question about the next field without a valid response to the current field.
-    - Instead of answering your question about a parameter, the user might respond to your query with a question of their own. If this occurs:
-         - Answer the user's question in the "answer_to_user" field of your output
-         - In the "question_to_user" field you must repeat the original question about the parameter but include a statement indicating that they can ask follow-up questions
-{promptStringList(additional_user_query_rules,4)}
+{generalParameterRules(output_type_name)}
+{codeAgentExtraParameterRules()}
 
-    ------------------------------------------------------------------------------------------------------------
-    General Parameter Rules:
-    These rules describe how you should obtain values for parameters in the output {output_type_name} structures
-    ------------------------------------------------------------------------------------------------------------
-    - Obtain the values for the parameters in the order they appear in {output_type_name}    
-    - The user may either provide you with one or more explicit parameter choices, or they might provide you with instructions on how to instantiate a set of instances with different values, for example by providing a selection criteria.
-        - If the user provides a selection criteria:
-            - You must write code to generate *all* values that satisfy this criteria. Do this by writing appropriate loops in your code output. Ask the user for the loop bounds if you do not know.     
-            - Do not ask the user to provide values that satisfy the criteria or to confirm specific solutions.
-            - Do not try to identify solutions to the criteria yourself.
-        - *Do not insist* that the user provide explicit values for parameters. 
-    - If the parameter rules specify that *you* should choose or set the value of a specific parameter yourself never ask the user about this parameter.
-    - **Never** guess a parameter that should be provided by the user. These values should always be obtained from the user. Never record such a parameter value unless it has been explicitly provided by the user.
-    - If a parameter has a default, you must suggest that value to the user when asking your question about the parameter. Never assume a value without asking.    
-    - If there is only one option for a parameter you must use that value. The first time this choice appears in your output you MUST also tell the user that you have made this choice in the "answer_to_user" field.
-
-    -------------------------------------------
-    Tool Rules:    
-    -------------------------------------------
-    - If a tool provides a list of valid responses, only accept values from among that list as valid choices by the user. If you list the values, ensure you only list those returned by the tool; never make up entries.
-{promptStringList(tool_rules,4)}
-
-    -------------------------------------------
-    Scratchpad rules:
-    -------------------------------------------
-    - Use the scratchpad to take notes of all choices made by the user.
-    - You must write a note for *every* user decision
-    - Do not record a note if the user asks you a question.
-    - Do not record questions that the user asks to you or notes on your responses. Only record choices.
-    - The note must include all choices that the user has made that are not currently noted in the scratchpad
-    - Always write a note if the user has made a choice of a parameter value, even if you don't yet have all the parameter values. Just record what you have
-    - Ensure that you also take note of the context. For example, if you are recording parameter choices for a specific propagator, note which propagator thse values correspond to.
-    - Do not repeat information in the scratchpad. Before populating "scratchpad_note" , check the current scratchpad content and only add information if the scratchpad either does not contain it or the new content supercedes the existing.
-    - You can also use the scratchpad to record TODO notes for yourself to help you plan.
-    - The scratchpad is also available to the automated validation steps performed after your workflow. You can thus use the scratchpad to respond to validation or missing parameter errors to clarify
-
-    -------------------------------------------
-    Recording code output rules:
-    These rules apply to the code for generating the {output_type_name} structures you must record in the "new_instance_code" field of your output
-    ------------------------------------------    
-    - The code field must contain correct Python inside a string.
-    - The code must produce jsonable Python dictionaries according to schema below.
-    - Use Python True/False for boolean fields
-    - Use Python None instead of "null"
-    - You cannot use any libraries within the code. 
-    - The {output_type_name} structure instances must be appended to a list with name '{instantiation_list_name}'. This list must contain ONLY {output_type_name} structures.
-    - You must use for loops to iterate over parameter values if there are more than 3 values.
-    - Try to make the code as short as possible while still remaininng intelligible. For instance:
-        - If you have a loop involving {output_type_name} that share multiple parameters, instantiate a base instance outside the loop with those static parameters set, and take copies within the loop to set the values that differ.
-        - Even if not in a loop, if different instances have multiple shared parameters, prefer a base instance with copies versus writing out the full set of parameters again.
-    - As your conversation with the user progresses, you must write code to create instances of {output_type_name} and fill their parameters in the "new_instance_code" field. Never write code for any purpose other than instantiating and populating parameters of {output_type_name}.
-    - The structure instances must follow the {output_type_name} schema for all fields and types, with the exception of unknown parameters. You must include all fields, even if they can have default values.
-    - For parameters that the user has not yet specified you must include the field but assign the value "<UNKNOWN>", even if the parameter is not a string parameter.
-    - You must output the updated code in every response, even if some parameters are still unknown.
-    - You must follow all rules (general and specific) provided in this prompt regarding the {output_type_name} parameters you record. 
-    - If recording a parameter that belongs to one of a list of structure instances and you don't yet know how many instances will be needed, instantiate a single instance and record the parameter there.
-    - The code you write must only pertain to creating {output_type_name} structures.
-    - Your code cannot call any of the tools you have access to.
+{toolRules(tools, tool_rules)}
     
-{param_rules_header}    
+{scratchpadRules()}
 
-{promptStringList(parameter_rules,4)}
+{codeAgentRecordingCodeRules(output_type_name, instantiation_list_name)}
 
-    -------------------------------------------
-    Rules for dealing with validation failures
-    -------------------------------------------
-    If you receive a message saying "Your previous response failed validation", perform the following:
-    -You must explain that you received an error
-    -If the reason is due to an obvious typing error by the user, correct that error and explain to the user what you corrected, then terminate your workflow. Do not repeat questions for parameters not associated with the validation error.
-    -If the solution to the validation error is not clear, explain to the user the nature of the error and ask them to provide a solution
+{specificParameterRules(parameter_rules)}    
+
+{validationFailureRules()}
     
     ------------------------------
     Schema for {output_type_name} 
@@ -571,10 +540,6 @@ New used-instance code:
     instantiation_list_code_base = instantiation_list_code_input if instantiation_list_code_input is not None else f"{instantiation_list_name} = []"
 
     output_type_name = type(structured_output_model).__name__
-    param_rules_header = """    -------------------------------------------
-    Additional rules for specific parameters:   
-    -------------------------------------------
-    """ if len(parameter_rules) > 0 else "" 
 
     sys = f"""
     You are a conversational agent responsible for {role}
@@ -607,100 +572,20 @@ New used-instance code:
     ----------------------------------------------
     {instantiation_list_code_base}
 
-    -----------------------------------------
-    Question and answer output rules
-    -----------------------------------------
-    - If your workflow is done and you have set the "done" parameter in your output, never output an answer or a question.
-    - If your workflow is not done, your output to the user *must* include either:
-      1) One or more questions
-      2) ONE answer to the user's previous question AND one or more further questions   
-    - NEVER output text not intended for the user such as notes-to-self.
-    - The user's message may contain multiple responses. These will be separated by a dashed line break.         
-    - If a field requires choosing a Union subtype with multiple options, you must first ask the user to choose the type before asking about any parameters of that subtype.
-    - If the user has not responsed to your questions, do not think ahead to the next group of questions. Wait for the user to respond.    
-    - Never ask if the user wants to specify a parameter; assume that the user wants to specify all parameters
-    - Be brief and to the point with your questions.
-    - Each question should only be about a single parameter. Ask a separate question for each parameter.
-    - Prefer to ask multiple questions at once rather than one at a time, apart from when asking the user to choose between multiple types.
-    - When asking the user to choose between multiple types, list only the types and not their parameters.
-    - If you ask a question where the user is asked to choose between a set of known options, first obtain the list of options (calling any appropriate tools) then list those options alongside the question in your response. If there are more than 6 choices, list only the first 6 and indicate that there are more options.
-    - If the user responds to a query with an invalid response, your response should explain that the choice is invalid and ask the question again. Never ask a question about the next field without a valid response to the current field.
-    - If the user asks you a question about a parameter:
-         - Answer the user's question in the "answer_to_user" field of your output
-         - In the "questions_to_user" field you must repeat the original question about the parameter but include a statement indicating that they can ask follow-up questions instead of answering.
-{promptStringList(additional_user_query_rules,4)}
-
-    ------------------------------------------------------------------------------------------------------------
-    General Parameter Rules:
-    These rules describe how you should obtain values for parameters in the output {output_type_name} structures
-    ------------------------------------------------------------------------------------------------------------
-    - Obtain the values for the parameters in the order they appear in {output_type_name}    
-    - The user may either provide you with one or more explicit parameter choices, or they might provide you with instructions on how to instantiate a set of instances with different values, for example by providing a selection criteria.
-        - If the user provides a selection criteria:
-            - You must write code to generate *all* values that satisfy this criteria. Do this by writing appropriate loops in your code output. Ask the user for the loop bounds if you do not know.     
-            - Do not ask the user to provide values that satisfy the criteria or to confirm specific solutions.
-            - Do not try to identify solutions to the criteria yourself.
-        - *Do not insist* that the user provide explicit values for parameters. 
-    - If the parameter rules specify that *you* should choose or set the value of a specific parameter yourself never ask the user about this parameter.
-    - **Never** guess a parameter that should be provided by the user. These values should always be obtained from the user. Never record such a parameter value unless it has been explicitly provided by the user.
-    - Never choose the default value for a parameter without asking the user. Instead, suggest the default value to the user and let them decide whether to use it.
-    - If there is only one option for a parameter you must use that value. The first time this choice appears in your output you MUST also tell the user that you have made this choice in the "answer_to_user" field.
-
-    -------------------------------------------
-    Tool Rules:    
-    -------------------------------------------
-    - If a tool provides a list of valid responses, only accept values from among that list as valid choices by the user. If you list the values, ensure you only list those returned by the tool; never make up entries.
-{promptStringList(tool_rules,4)}
-
-    -------------------------------------------
-    Scratchpad rules:
-    -------------------------------------------
-    - Use the scratchpad to take notes of all choices made by the user.
-    - You must write a note for *every* user decision
-    - Do not record a note if the user asks you a question.
-    - Do not record questions that the user asks to you or notes on your responses. Only record choices.
-    - The note must include all choices that the user has made that are not currently noted in the scratchpad
-    - Always write a note if the user has made a choice of a parameter value, even if you don't yet have all the parameter values. Just record what you have
-    - Ensure that you also take note of the context. For example, if you are recording parameter choices for a specific propagator, note which propagator thse values correspond to.
-    - Do not repeat information in the scratchpad. Before populating "scratchpad_note" , check the current scratchpad content and only add information if the scratchpad either does not contain it or the new content supercedes the existing.
-    - You can also use the scratchpad to record TODO notes for yourself to help you plan.
-    - The scratchpad is also available to the automated validation steps performed after your workflow. You can thus use the scratchpad to respond to validation or missing parameter errors to clarify
-
-    -------------------------------------------
-    Recording code output rules:
-    These rules apply to the code for generating the {output_type_name} structures you must record in the "new_instance_code" field of your output
-    ------------------------------------------    
-    - The code field must contain correct Python inside a string.
-    - The code must produce jsonable Python dictionaries according to schema below.
-    - Use Python True/False for boolean fields
-    - Use Python None instead of "null"
-    - You cannot use any libraries within the code. 
-    - The {output_type_name} structure instances must be appended to a list with name '{instantiation_list_name}'. This list must contain ONLY {output_type_name} structures.
-    - You must use for loops to iterate over parameter values if there are more than 3 values.
-    - Try to make the code as short as possible while still remaining intelligible. For instance:
-        - If you have a loop involving {output_type_name} that share multiple parameters, instantiate a base instance outside the loop with those static parameters set, and take copies within the loop to set the values that differ.
-        - Even if not in a loop, if different instances have multiple shared parameters, prefer a base instance with copies versus writing out the full set of parameters again.
-    - As your conversation with the user progresses, you must write code to create instances of {output_type_name} and fill their parameters in the "new_instance_code" field. Never write code for any purpose other than instantiating and populating parameters of {output_type_name}.
-    - The structure instances must follow the {output_type_name} schema for all fields and types, with the exception of unknown parameters. You must include all fields, even if they can have default values.
-    - For parameters that the user has not yet specified you must include the field but assign the value "<UNKNOWN>", even if the parameter is not a string parameter.
-    - You must output the updated code in every response, even if some parameters are still unknown.
-    - You must follow all rules (general and specific) provided in this prompt regarding the {output_type_name} parameters you record. 
-    - If recording a parameter that belongs to one of a list of structure instances and you don't yet know how many instances will be needed, instantiate a single instance and record the parameter there.
-    - The code you write must only pertain to creating {output_type_name} structures.
-    - Your code cannot call any of the tools you have access to.
+{questionAndAnswerRulesMultiQ(additional_user_query_rules)}
     
-{param_rules_header}    
+{generalParameterRules(output_type_name)}
+{codeAgentExtraParameterRules()}
 
-{promptStringList(parameter_rules,4)}
-
-    -------------------------------------------
-    Rules for dealing with validation failures
-    -------------------------------------------
-    If you receive a message saying "Your previous response failed validation", perform the following:
-    -You must explain that you received an error
-    -If the reason is due to an obvious typing error by the user, correct that error and explain to the user what you corrected, then terminate your workflow. Do not repeat questions for parameters not associated with the validation error.
-    -If the solution to the validation error is not clear, explain to the user the nature of the error and ask them to provide a solution
+{toolRules(tools, tool_rules)}
     
+{scratchpadRules()}
+
+{codeAgentRecordingCodeRules(output_type_name, instantiation_list_name)}
+
+{specificParameterRules(parameter_rules)}    
+
+{validationFailureRules()}       
     ------------------------------
     Schema for {output_type_name} 
     ------------------------------
@@ -725,6 +610,9 @@ New used-instance code:
 
     2) Set the "done" parameter in your output to True indicating that your workflow is complete.
     """
+
+    print("BASE PROMPT ",sys)
+
     config = {"configurable": {"thread_id": "1", "stream" : False}}
 
     @dynamic_prompt
@@ -919,10 +807,6 @@ New used-instance code:
     instantiation_list_code_base = instantiation_list_code_input if instantiation_list_code_input is not None else f"{instantiation_list_name} = []"
 
     output_type_name = type(structured_output_model).__name__
-    param_rules_header = """    -------------------------------------------
-    Additional rules for specific parameters:   
-    -------------------------------------------
-    """ if len(parameter_rules) > 0 else "" 
 
     sys = f"""
     You are are responsible for {role}
@@ -956,46 +840,12 @@ New used-instance code:
     ----------------------------------------------
     {instantiation_list_code_base}
 
-    ------------------------------------------------------------------------------------------------------------
-    General Parameter Rules:
-    These rules describe how you should obtain values for parameters in the output {output_type_name} structures
-    ------------------------------------------------------------------------------------------------------------
-    - Obtain the values for the parameters in the order they appear in {output_type_name}    
-    - The user may either provide you with one or more explicit parameter choices, or they might provide you with instructions on how to instantiate a set of instances with different values, for example by providing a selection criteria.
-        - If the user provides a selection criteria:
-            - You must write code to generate *all* values that satisfy this criteria. Do this by writing appropriate loops in your code output. Ask the user for the loop bounds if you do not know.     
-            - Do not ask the user to provide values that satisfy the criteria or to confirm specific solutions.
-            - Do not try to identify solutions to the criteria yourself.
-        - *Do not insist* that the user provide explicit values for parameters. 
-    - If the parameter rules specify that *you* should choose or set the value of a specific parameter yourself never ask the user about this parameter.
-    - **Never** guess a parameter that should be provided by the user. These values should always be obtained from the user. Never record such a parameter value unless it has been explicitly provided by the user.
-    - If a parameter has a default, you must suggest that value to the user when asking your question about the parameter. Never assume a value without asking.    
-    - If there is only one option for a parameter you must use that value. The first time this choice appears in your output you MUST also tell the user that you have made this choice in the "answer_to_user" field.
-    - Never repeat back a user's choice and ask them to confirm it.     
-    - If the user has made a decision about a parameter or type, never ask them about it again, never ask them to confirm it.
+{generalParameterRules(output_type_name, is_conversational=False)}
+{codeAgentExtraParameterRules(is_conversational=False)}
 
-    -------------------------------------------
-    Recording code output rules:
-    These rules apply to the code for generating the {output_type_name} structures you must record in the "new_instance_code" field of your output
-    ------------------------------------------    
-    - The code field must contain correct Python inside a string.
-    - The code must produce jsonable Python dictionaries according to schema below.
-    - Use Python True/False for boolean fields
-    - You cannot use any libraries within the code. 
-    - The {output_type_name} structure instances must be appended to a list with name '{instantiation_list_name}'. This list must contain ONLY {output_type_name} structures.
-    - You must use for loops to iterate over parameter values if there are more than 3 values.
-    - Try to make the code as short as possible while still remaininng intelligible. For instance:
-        - If you have a loop involving {output_type_name} that share multiple parameters, instantiate a base instance outside the loop with those static parameters set, and take copies within the loop to set the values that differ.
-        - Even if not in a loop, if different instances have multiple shared parameters, prefer a base instance with copies versus writing out the full set of parameters again.
-    - Never write code to "new_instance_code" for any purpose other than instantiating and populating parameters of {output_type_name}.
-    - The structure instances must follow the {output_type_name} schema for all fields and types, with the exception of unknown parameters. You must include all fields, even if they can have default values.
-    - You must follow all rules (general and specific) provided in this prompt regarding the {output_type_name} parameters you record. 
-    - The code you write must only pertain to creating {output_type_name} structures.
-    - Never ask the user to confirm your code.
+{codeAgentRecordingCodeRules(output_type_name, instantiation_list_name, is_conversational = False)}
 
-{param_rules_header}    
-
-{promptStringList(parameter_rules,4)}
+{specificParameterRules(parameter_rules)}    
 
     ------------------------------
     Schema for {output_type_name} 

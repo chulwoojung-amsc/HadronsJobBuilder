@@ -1,6 +1,3 @@
-from typing import Tuple
-
-from langchain_core.messages import BaseMessage
 from langchain.messages import (
     SystemMessage,
     HumanMessage,
@@ -10,15 +7,10 @@ from langchain.messages import (
 
 from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter, PositiveFloat, PositiveInt, create_model, model_validator
 from typing import Literal, Union, List, Optional, Tuple, Any
-from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from langchain.agents import create_agent
-from langchain.agents.middleware import before_model, after_model, AgentState, dynamic_prompt, ModelRequest
+from langchain.agents.middleware import AgentState, dynamic_prompt, ModelRequest
 import json
-from .common import getUserInput, provideInformationToUser, queryYesNo, prettyPrintPydantic, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput
-from femtomeas.workflow_manager.api_general import getKnownMachines, getUserAccountProjects, getMachineQueues
-from langchain.tools import tool
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.runtime import Runtime
+from .common import queryYesNo, prettyPrintPydantic, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput
 import re
 
 from typing import Callable
@@ -29,7 +21,6 @@ from langchain.agents.middleware import (
     AgentState,
     ExtendedModelResponse
 )
-from langgraph.types import Command
 from typing_extensions import NotRequired
 
 def indentExceptFirst(text, prefix):
@@ -70,8 +61,138 @@ def listEnumerateStr(lst)->str:
     for i,v in enumerate(lst):
         out = out + f"{i} : {v}\n"
     return out
-          
-    
+
+##############################
+# Prompt          
+def questionAndAnswerRulesSingleQ(additional_user_query_rules: list[str] = []):
+    return f"""    -----------------------------------------
+    Question and answer output rules
+    -----------------------------------------
+    - If your workflow is done and you have set the "done" parameter in your output, never output an answer or a question.
+    - If your workflow is not done, your output to the user *must* include either:
+      1) ONE question
+      2) ONE answer to the user's previous question AND ONE further question    
+    - NEVER output text not intended for the user such as notes-to-self.    
+    - Never ask more than one question at a time. Always wait for the user to respond before asking your next question.
+    - If the user has not responsed to your question, do not think ahead to the next question. Wait for the user to respond.    
+    - Never ask if the user wants to specify a parameter; assume that the user wants to specify all parameters
+    - Be brief and to the point with your question, and do not ask for more than one value in a single question.    
+    - If the user asks you to choose a value for a parameter, explain to them via the "answer_to_user" field that you cannot decide on parameter values, you can only make suggestions, then repeat the question in the "question_to_user" field.
+    - Be brief and to the point with your question, and do not ask for more than one value in a single question.
+    - If you ask a question where the user is asked to choose between a set of known options, first obtain the list of options (calling any appropriate tools) then list those options alongside the question in your response. If there are more than 6 choices, list only the first 6 and indicate that there are more options.
+    - If the user responds to a query with an invalid response, your response should explain that the choice is invalid and ask the question again. Never ask a question about the next field without a valid response to the current field.
+    - Instead of answering your question about a parameter, the user might respond to your query with a question of their own. If this occurs:
+         - Answer the user's question in the "answer_to_user" field of your output
+         - In the "question_to_user" field you must repeat the original question about the parameter but include a statement indicating that they can ask follow-up questions
+{promptStringList(additional_user_query_rules,4)}"""
+
+def questionAndAnswerRulesMultiQ(additional_user_query_rules: list[str] = []):
+    return f"""    -----------------------------------------
+    Question and answer output rules
+    -----------------------------------------
+    - If your workflow is done and you have set the "done" parameter in your output, never output an answer or a question.
+    - If your workflow is not done, your output to the user *must* include either:
+      1) One or more questions
+      2) ONE answer to the user's previous question AND one or more further questions   
+    - NEVER output text not intended for the user such as notes-to-self.
+    - The user's message may contain multiple responses. These will be separated by a dashed line break.         
+    - If a field requires choosing a Union subtype with multiple options, you must first ask the user to choose the type before asking about any parameters of that subtype.
+    - If the user has not responsed to your questions, do not think ahead to the next group of questions. Wait for the user to respond.    
+    - Never ask if the user wants to specify a parameter; assume that the user wants to specify all parameters
+    - Be brief and to the point with your questions.
+    - Each question should only be about a single parameter. Ask a separate question for each parameter.
+    - Prefer to ask multiple questions at once rather than one at a time, apart from when asking the user to choose between multiple types.
+    - When asking the user to choose between multiple types, list only the types and not their parameters.
+    - If you ask a question where the user is asked to choose between a set of known options, first obtain the list of options (calling any appropriate tools) then list those options alongside the question in your response. If there are more than 6 choices, list only the first 6 and indicate that there are more options.
+    - If the user responds to a query with an invalid response, your response should explain that the choice is invalid and ask the question again. Never ask a question about the next field without a valid response to the current field.
+    - If the user asks you a question about a parameter:
+         - Answer the user's question in the "answer_to_user" field of your output
+         - In the "questions_to_user" field you must repeat the original question about the parameter but include a statement indicating that they can ask follow-up questions instead of answering.
+{promptStringList(additional_user_query_rules,4)}"""
+
+
+
+def scratchpadRules():
+    return f"""    -------------------------------------------
+    Scratchpad rules:
+    -------------------------------------------
+    - Use the scratchpad to take notes of all choices made by the user.
+    - You must write a note for *every* user decision
+    - Do not record a note if the user asks you a question.
+    - Do not record questions that the user asks to you or notes on your responses. Only record choices.
+    - The note must include all choices that the user has made that are not currently noted in the scratchpad
+    - Always write a note if the user has made a choice of a parameter value, even if you don't yet have all the parameter values. Just record what you have
+    - Ensure that you also take note of the context. For example, if you are recording parameter choices for a specific propagator, note which propagator thse values correspond to.
+    - Do not repeat information in the scratchpad. Before populating "scratchpad_note" , check the current scratchpad content and only add information if the scratchpad either does not contain it or the new content supercedes the existing.
+    - You can also use the scratchpad to record TODO notes for yourself to help you plan.
+    - The scratchpad is also available to the automated validation steps performed after your workflow. You can thus use the scratchpad to respond to validation or missing parameter errors to clarify."""
+
+def recordingJSONoutputRules(output_type_name):
+    return f"""    -------------------------------------------
+    Recording JSON output rules:
+    These rules apply to the {output_type_name} structure you must record in the "params_struct" field of your output
+    ------------------------------------------    
+    - As your conversation with the user progresses, you must record the current state of the output {output_type_name} JSON using in the "params_struct" field. Never specify the parameters of a different data structure, only {output_type_name}.
+    - The structure must follow the {output_type_name} schema for all fields and types, with the exception of unknown parameters. You must include all fields, even if they can have default values.
+    - For parameters that the user has not yet specified you must include the field but assign the value "<UNKNOWN>", even if the parameter is not a string parameter.
+    - You must output the updated structure in every response, even if some parameters are still unknown.
+    - You must follow all rules (general and specific) provided in this prompt regarding the {output_type_name} parameters you record. 
+    - If recording a parameter that belongs to one of a list of structure instances and you don't yet know how many instances will be needed, instantiate a single instance and record the parameter there."""
+
+def generalParameterRules(output_type_name, is_conversational: bool = True):
+    out = f"""    ------------------------------------------------------------------------------------------------------------
+    General Parameter Rules:
+    These rules describe how you should obtain values for parameters in the output {output_type_name} structure
+    ------------------------------------------------------------------------------------------------------------
+    - Obtain the values for the parameters in the order they appear in {output_type_name}        
+    - **Never** guess a parameter that should be provided by the user. These values should always be obtained from the user. Never record such a parameter value unless it has been explicitly provided by the user.    
+"""
+    if is_conversational:
+        out += """    - If there is only one option for a parameter you must use that value. The first time this choice appears in your output you MUST also tell the user that you have made this choice in the "answer_to_user" field.
+    - If a parameter has a default, you must suggest that value to the user when asking your question about the parameter. Never assume a value without asking.          
+    - If the parameter rules specify that *you* should choose or set the value of a specific parameter yourself never ask the user about this parameter.
+    - Never repeat back a user's choice and ask them to confirm it.     
+    - If the user has made a decision about a parameter or type, never ask them about it again, never ask them to confirm it."""
+    else:
+        out += """    - If there is only one option for a parameter you must use that value."""
+
+    return out
+
+
+
+def specificParameterRules(parameter_rules:  list[str] = []):
+    out = ""
+    if len(parameter_rules):
+        out = f"""
+    -------------------------------------------
+    Additional rules for specific parameters:   
+    -------------------------------------------
+{promptStringList(parameter_rules,4)}"""        
+    return out
+
+
+def toolRules(tools, tool_rules : list[str] = []):
+    if len(tools) == 0:
+        return ""
+    else:
+        return f"""    -------------------------------------------
+    Tool Rules:    
+    -------------------------------------------
+    - If a tool provides a list of valid responses, only accept values from among that list as valid choices by the user. If you list the values, ensure you only list those returned by the tool; never make up entries.
+{promptStringList(tool_rules,4)}"""
+
+def validationFailureRules():
+    return f"""    -------------------------------------------
+    Rules for dealing with validation failures
+    -------------------------------------------
+    If you receive a message saying "Your previous response failed validation", perform the following:
+    -You must explain that you received an error
+    -If the reason is due to an obvious typing error by the user, correct that error and explain to the user what you corrected, then terminate your workflow. Do not repeat questions for parameters not associated with the validation error.
+    -If the solution to the validation error is not clear, explain to the user the nature of the error and ask them to provide a solution."""
+
+
+##############################
+# Agent
 def parameterAgent(llm_model, structured_output_model : BaseModel,
                    role: str, tools,
                    tool_rules : List[str] = [],
@@ -85,13 +206,7 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
     assert isinstance(input_messages, list)
     agent_state.reset()
    
-    output_type_name = type(structured_output_model).__name__
-    param_rules_header = """    -------------------------------------------
-    Additional rules for specific parameters:   
-    -------------------------------------------
-    """ if len(parameter_rules) > 0 else ""
-
-    
+    output_type_name = type(structured_output_model).__name__   
     
     """
     role: System prompt text describing the agent's role. Follows from "You are a conversational agent responsible for..."
@@ -124,79 +239,19 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
       
     Use the "scratchpad_note" field of your output to record notes to yourself (these are not visible to the user). Refer to the scratchpad rules below for appropriate content.
             
-    -----------------------------------------
-    Question and answer output rules
-    -----------------------------------------
-    - If your workflow is done and you have set the "done" parameter in your output, never output an answer or a question.
-    - If your workflow is not done, your output to the user *must* include either:
-      1) ONE question
-      2) ONE answer to the user's previous question AND ONE further question    
-    - NEVER output text not intended for the user such as notes-to-self.    
-    - Never ask more than one question at a time. Always wait for the user to respond before asking your next question.
-    - If the user has not responsed to your question, do not think ahead to the next question. Wait for the user to respond.
+{questionAndAnswerRulesSingleQ(additional_user_query_rules)}
+
+{generalParameterRules(output_type_name)}
     
-    - Never ask if the user wants to specify a parameter; assume that the user wants to specify all parameters
-    - If the user asks you to choose a value for a parameter, explain to them via the "answer_to_user" field that you cannot decide on parameter values, you can only make suggestions, then repeat the question in the "question_to_user" field.
-    - Be brief and to the point with your question, and do not ask for more than one value in a single question.
-    - If you ask a question where the user is asked to choose between a set of known options, first obtain the list of options (calling any appropriate tools) then list those options alongside the question in your response. If there are more than 6 choices, list only the first 6 and indicate that there are more options.
-    - If the user responds to a query with an invalid response, your response should explain that the choice is invalid and ask the question again. Never ask a question about the next field without a valid response to the current field.
-    - Instead of answering your question about a parameter, the user might respond to your query with a question of their own. If this occurs:
-         - Answer the user's question in the "answer_to_user" field of your output
-         - In the "question_to_user" field you must repeat the original question about the parameter but include a statement indicating that they can ask follow-up questions
-{promptStringList(additional_user_query_rules,4)}
+{specificParameterRules(parameter_rules)}
 
-    ------------------------------------------------------------------------------------------------------------
-    General Parameter Rules:
-    These rules describe how you should obtain values for parameters in the output {output_type_name} structure
-    ------------------------------------------------------------------------------------------------------------
-    - Obtain the values for the parameters in the order they appear in {output_type_name}    
-    - If the parameter rules specify that *you* should choose or set the value of a specific parameter yourself never ask the user about this parameter.
-    - **Never** guess a parameter that should be provided by the user. These values should always be obtained from the user. Never record such a parameter value unless it has been explicitly provided by the user.
-    - If a parameter has a default, you must suggest that value to the user when asking your question about the parameter. Never assume a value without asking.    
-    - If there is only one option for a parameter you must use that value. The first time this choice appears in your output you MUST also tell the user that you have made this choice in the "answer_to_user" field.
-
-    -------------------------------------------
-    Tool Rules:    
-    -------------------------------------------
-    - If a tool provides a list of valid responses, only accept values from among that list as valid choices by the user. If you list the values, ensure you only list those returned by the tool; never make up entries.
-{promptStringList(tool_rules,4)}
-
-    -------------------------------------------
-    Scratchpad rules:
-    -------------------------------------------
-    - Use the scratchpad to take notes of all choices made by the user.
-    - You must write a note for *every* user decision
-    - Do not record a note if the user asks you a question.
-    - Do not record questions that the user asks to you or notes on your responses. Only record choices.
-    - The note must include all choices that the user has made that are not currently noted in the scratchpad
-    - Always write a note if the user has made a choice of a parameter value, even if you don't yet have all the parameter values. Just record what you have
-    - Ensure that you also take note of the context. For example, if you are recording parameter choices for a specific propagator, note which propagator thse values correspond to.
-    - Do not repeat information in the scratchpad. Before populating "scratchpad_note" , check the current scratchpad content and only add information if the scratchpad either does not contain it or the new content supercedes the existing.
-    - You can also use the scratchpad to record TODO notes for yourself to help you plan.
-    - The scratchpad is also available to the automated validation steps performed after your workflow. You can thus use the scratchpad to respond to validation or missing parameter errors to clarify
-
-    -------------------------------------------
-    Recording JSON output rules:
-    These rules apply to the {output_type_name} structure you must record in the "params_struct" field of your output
-    ------------------------------------------    
-    - As your conversation with the user progresses, you must record the current state of the output {output_type_name} JSON using in the "params_struct" field. Never specify the parameters of a different data structure, only {output_type_name}.
-    - The structure must follow the {output_type_name} schema for all fields and types, with the exception of unknown parameters. You must include all fields, even if they can have default values.
-    - For parameters that the user has not yet specified you must include the field but assign the value "<UNKNOWN>", even if the parameter is not a string parameter.
-    - You must output the updated structure in every response, even if some parameters are still unknown.
-    - You must follow all rules (general and specific) provided in this prompt regarding the {output_type_name} parameters you record. 
-    - If recording a parameter that belongs to one of a list of structure instances and you don't yet know how many instances will be needed, instantiate a single instance and record the parameter there.
+{toolRules(tools, tool_rules)}
     
-{param_rules_header}    
+{scratchpadRules()}
 
-{promptStringList(parameter_rules,4)}
+{recordingJSONoutputRules(output_type_name)}    
 
-    -------------------------------------------
-    Rules for dealing with validation failures
-    -------------------------------------------
-    If you receive a message saying "Your previous response failed validation", perform the following:
-    -You must explain that you received an error
-    -If the reason is due to an obvious typing error by the user, correct that error and explain to the user what you corrected, then terminate your workflow. Do not repeat questions for parameters not associated with the validation error.
-    -If the solution to the validation error is not clear, explain to the user the nature of the error and ask them to provide a solution
+{validationFailureRules()}    
     
     ------------------------------
     Schema for {output_type_name} 
@@ -330,18 +385,9 @@ def parameterModelCall(llm_model, structured_output_model : BaseModel,
 
     You must respond with structured output in the {output_type_name} schema.
 
-    ------------------------------------------------------------------------------------------------------------
-    General Parameter Rules:
-    These rules describe how you should obtain values for parameters in the output {output_type_name} structure
-    ------------------------------------------------------------------------------------------------------------
-    - Obtain the values for the parameters in the order they appear in {output_type_name}    
-    - If the parameter rules specify that *you* should choose or set the value of a specific parameter yourself never ask the user about this parameter.
-    - **Never** guess a parameter that should be provided by the user. These values should always be obtained from the user. Never record such a parameter value unless it has been explicitly provided by the user.    
-    - If there is only one option for a parameter you must use that value. 
-    
-{param_rules_header}    
-
-{promptStringList(parameter_rules,4)}   
+{generalParameterRules(output_type_name, is_conversational=False)}        
+   
+{specificParameterRules(parameter_rules)}
 
     ------------------------------
     Schema for {output_type_name} 
