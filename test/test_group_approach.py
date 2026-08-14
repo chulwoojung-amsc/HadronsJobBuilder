@@ -145,7 +145,7 @@ if __name__ == "__main__":
         graph = sg1_h.parent_node
         graph.eval(enactor=testEnactor)        
 
-    if 1:
+    if 0:
         #Test mixed-prec solver agent with guessers
         state = State()    
 
@@ -182,7 +182,7 @@ if __name__ == "__main__":
         graph.eval(enactor=testEnactor)
 
 
-    if 0:
+    if 1:
         #Test action agent
         state = State()
         initializeState(amsc_llm_0t, state)

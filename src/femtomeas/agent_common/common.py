@@ -59,6 +59,30 @@ def Input(query):
 
     return out
 
+def InputMulti(queries, preamble=None)->list[str]:
+    assert len(queries) > 0
+    global print_func, input_func, log_stream
+    if len(queries) == 1:
+        return [ Input( (preamble + "\n" if preamble is not None else "") + queries[0] ) ]
+
+
+    pr = "" if preamble is None else preamble + "\n"
+    pr += f"Answer the following {len(queries)} questions (an empty response will exit the question loop):"
+
+    print_func(pr)
+    print(f"\n#########################\nAI: {pr}", file=log_stream)
+
+    out = []
+    for i, q in enumerate(queries):
+        resp = input_func(f"{i+1}) {q}")
+        if len(resp) == 0:
+            break
+        else:
+            out.append(resp)
+            if log_stream is not None:
+                print("\n#########################\nAI:\n %s" % q, file=log_stream)
+                print("\n#########################\nHuman:\n %s" % out[-1], file=log_stream, flush=True)
+    return out
 
 def prettyPrintPydantic(instance)->str:
     global output_style
