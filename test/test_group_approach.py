@@ -18,7 +18,7 @@ from femtomeas.meas_config_agent.eigenvectors import createEigenSolverGroup, Eig
 
 from femtomeas.meas_config_agent.state import State, reloadStateCheckpoint, checkpointState
 import os
-from femtomeas.meas_config_agent.gauge import GaugeFieldConfig, UnitGauge
+from femtomeas.meas_config_agent.gauge import GaugeFieldConfig, UnitGauge, identifyGaugeConfigs
 import io
 from langchain_openai import ChatOpenAI
 import sys
@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
     if 0:
         #Test the function manifest includes all the agent actions
-        print(function_manifest())
+        print(workflowFunctionManifest())
 
     if 0:
         #Test state serialization
@@ -145,7 +145,7 @@ if __name__ == "__main__":
         graph = sg1_h.parent_node
         graph.eval(enactor=testEnactor)        
 
-    if 0:
+    if 1:
         #Test mixed-prec solver agent with guessers
         state = State()    
 
@@ -172,6 +172,67 @@ if __name__ == "__main__":
 
 
     if 0:
+        #Test handle-type check when graph is created
+        state = State()    
+
+        state.instances["sources"] = encodeInstances("sources", SourceConfig(name="wall_0", source=WallSource(timeslice=0, momentum=(0,0,0,0)) ) )            
+        state.groups["source_group"] = SourceGroup(code = encodeGroup("source_group", ["wall_0", "point_0"]) )
+
+        state.instances["actions"] = encodeInstances("actions", ActionConfig(name="action_d", precision="Double", action=DWFaction(Ls=12, mass=0.01, M5=1.8) ) )            
+        state.groups["agroup1"] = ActionGroup(code = encodeGroup("agroup1", ["action_d", "action_s"]))
+
+        state.instances["eigensolvers"] = encodeInstances("eigensolvers",  
+            EigenSolverConfig(name="esol_d", action="action_d", solver_args=LanczosEigenSolver(cheby=ChebyParams(alpha=0.01,beta=3.2,Npoly=101), Nstop=100, Nk=100, Nextra=10, resid=1e-7, MaxIt=20, storeEvecs=False, fileStem="" )))
+        state.groups["egroup1"] = EigenSolverGroup(code = encodeGroup("egroup1", ["esol_d", "esol_s"]))
+
+        initializeState(amsc_llm_0t, state)
+
+        ag1_h = retrieveGroupHandle("agroup1")        
+        eg1_h = retrieveGroupHandle("egroup1")
+        sg1_h = retrieveGroupHandle("source_group")
+
+        #Try feeding a source group instead of an action group
+        caught=False
+        try:
+            slg1_h = createSolverGroup("slgroup1", sg1_h, eg1_h)
+        except Exception as e:
+            print("CAUGHT EXPECTED EXCEPTION: ", e)
+            caught=True
+        assert caught
+
+        #Eigensolver is an optional argument, check it works with None and a correct type
+        caught=False
+        try:
+            slg1_h = createSolverGroup("slgroup1", ag1_h, eg1_h)
+        except Exception as e:
+            print("CAUGHT *UN*EXPECTED EXCEPTION: ", e)
+            caught=True
+        assert not caught
+
+        caught=False
+        try:
+            slg1_h = createSolverGroup("slgroup1", ag1_h, None)
+        except Exception as e:
+            print("CAUGHT *UN*EXPECTED EXCEPTION: ", e)
+            caught=True
+        assert not caught
+
+        #Now check it only accepts within the expected types
+        caught=False
+        try:
+            slg1_h = createSolverGroup("slgroup1", ag1_h, sg1_h)
+        except Exception as e:
+            print("CAUGHT EXPECTED EXCEPTION: ", e)
+            caught=True
+        assert caught
+
+
+    if 0:
+        #Test gauge agent
+        identifyGaugeConfigs(amsc_llm_0t, [HumanMessage("Start your workflow")])
+
+
+    if 0:
         #Test source agent
         state = State()
         initializeState(amsc_llm_0t, state)
@@ -182,7 +243,7 @@ if __name__ == "__main__":
         graph.eval(enactor=testEnactor)
 
 
-    if 1:
+    if 0:
         #Test action agent
         state = State()
         initializeState(amsc_llm_0t, state)

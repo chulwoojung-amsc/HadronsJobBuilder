@@ -10,7 +10,7 @@ from typing import Literal, Union, List, Optional, Tuple, Any
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentState, dynamic_prompt, ModelRequest
 import json
-from .common import queryYesNo, prettyPrintPydantic, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput
+from .common import queryYesNo, prettyPrintPydantic, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput, InputMulti as AgentInputMulti
 import re
 
 from typing import Callable
@@ -45,6 +45,13 @@ class AgentOutput(BaseModel):
     params_struct: str = Field(..., description="The current draft of the output JSON structure")
     done: bool = Field(..., description="The agent's workflow is complete")
 
+class AgentOutputMultiQ(BaseModel):
+    """Structured output for the agent"""    
+    questions_to_user: List[str] = Field(..., description="A question posed to the user")
+    answer_to_user: str = Field(..., description="An answer to a question posed by the user")
+    scratchpad_note: str = Field(..., description="Notes kept by the agent, appended to the current scratchpad")
+    params_struct: str = Field(..., description="The current draft of the output JSON structure")
+    done: bool = Field(..., description="The agent's workflow is complete")
 
 class AgentState:
     def reset(self):                
@@ -201,12 +208,14 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
                    additional_user_query_rules = [],
                    additional_workflow_termination_rules: str | None = None,
                    validator : Callable | None = None,
-                   human_validation_output_formatter = prettyPrintPydantic #function used to format output for human validation                   
+                   human_validation_output_formatter = prettyPrintPydantic, #function used to format output for human validation                   
+                   multi_question_mode:bool =True
                    ):
     assert isinstance(input_messages, list)
     agent_state.reset()
    
     output_type_name = type(structured_output_model).__name__   
+    agent_output_type = AgentOutputMultiQ if multi_question_mode else AgentOutput
     
     """
     role: System prompt text describing the agent's role. Follows from "You are a conversational agent responsible for..."
@@ -223,8 +232,8 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
       - The schema is provided in the "Schema for {output_type_name}" section below.
       - Your current working draft of this structure is provided in the "Current {output_type_name} params struct" section below. 
 
-    On each turn of the conversation you must respond with structured output in the AgentOutput schema:
-        {AgentOutput.model_json_schema() }
+    On each turn of the conversation you must respond with structured output in the {agent_output_type.__name__} schema:
+        {agent_output_type.model_json_schema() }
     
     In this output you must always record the currently-known contents of the output {output_type_name} JSON structure in the "params_struct" field. Refer to the "Recording JSON output" rules below for how to format this parameter.
     
@@ -232,14 +241,15 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
         - If all required parameters have been specified, set the "done" parameter in your output to True indicating that your workflow is complete
         - Otherwise set the "done" parameter to False. 
 
-    If your workflow is not complete (i.e. not all required parameters have been specified) you must continue to ask questions to obtain the missing parameters:    
-        - Use the output field "answer_to_user" to answer a question that the user posed, if any. If the user asks a question, your response must contain an answer.
-        - Use the output field "question_to_user" to ask a question.
-      These outputs will be sent to the user and their response will be contained in the next message you receive. Follow the "Question/answer output rules" below when formating these outputs.
+    If your workflow is not complete (i.e. your code does not instantiate all required instances or sets all required parameters) you must continue to ask questions to obtain the missing parameters and instances:    
+        - Use the output field "answer_to_user" to answer a question that the user posed, if any. If the user asks a question, your response must contain an answer.   
+        {"""- Use the output field "question_to_user" to ask a question.""" if not multi_question_mode else
+         """- Use the output field "questions_to_user" to ask questions."""}
+      These outputs will be sent to the user and their response{"(s)" if multi_question_mode else ""} will be contained in the next message you receive. Follow the "Question/answer output rules" below when formating these outputs.            
       
     Use the "scratchpad_note" field of your output to record notes to yourself (these are not visible to the user). Refer to the scratchpad rules below for appropriate content.
             
-{questionAndAnswerRulesSingleQ(additional_user_query_rules)}
+{questionAndAnswerRulesMultiQ(additional_user_query_rules) if multi_question_mode else questionAndAnswerRulesSingleQ(additional_user_query_rules)}
 
 {generalParameterRules(output_type_name)}
     
@@ -277,7 +287,7 @@ Current {output_type_name} params struct
         return prompt
     
     all_tools = tools.copy()
-    agent = create_agent(model=llm_model, tools=all_tools, middleware=[system_prompt], response_format=AgentOutput)
+    agent = create_agent(model=llm_model, tools=all_tools, middleware=[system_prompt], response_format=agent_output_type)
 
     user_interactions = input_messages.copy()
     accepted = False
@@ -287,17 +297,19 @@ Current {output_type_name} params struct
         #Invoke the agent
         try:
             resp = agent.invoke({ "messages": user_interactions }, config=config)
-            resp_struct = getStructuredResponse(resp, AgentOutput)
+            resp_struct = getStructuredResponse(resp, agent_output_type)
         except Exception as e:
             user_interactions.append(HumanMessage(f"Encountered an error: {e}"))
             continue
 
+        questions = resp_struct.questions_to_user if multi_question_mode else resp_struct.question_to_user
+
         #Check it followed the rules about questions/answers
-        if resp_struct.done and ( len(resp_struct.question_to_user) > 0 or  len(resp_struct.answer_to_user) > 0 ):
+        if resp_struct.done and ( len(questions) > 0 or  len(resp_struct.answer_to_user) > 0 ):
             user_interactions.append(HumanMessage("You cannot answer or ask a question if 'done' is set to True"))
-            print("DONE TRUE BUT QUESTION",resp_struct.question_to_user,"OR ANSWER",resp_struct.answer_to_user)
+            print("DONE TRUE BUT QUESTION", questions,"OR ANSWER",resp_struct.answer_to_user)
             continue
-        if not resp_struct.done and len(resp_struct.question_to_user) == 0:
+        if not resp_struct.done and len(questions) == 0:
             user_interactions.append(HumanMessage("Your response must include a question unless you are done"))
             print("NO QUESTION IN RESPONSE")
             continue
@@ -343,14 +355,26 @@ Current {output_type_name} params struct
             agent_state.params_struct = resp_struct.params_struct
 
             #Compose the AI message to the user
-            ai_msg = resp_struct.answer_to_user + ("\n\n" if len(resp_struct.answer_to_user) > 0 else "") + resp_struct.question_to_user
+            ai_msg = resp_struct.answer_to_user + ("\n\n" if len(resp_struct.answer_to_user) > 0 else "")
+            if multi_question_mode:
+                for i, q in enumerate(resp_struct.questions_to_user):
+                    ai_msg += f"{i+1}) {q}\n"      
+            else:
+                ai_msg += resp_struct.question_to_user
 
             #Add it to the message history
             user_interactions.append(AIMessage(ai_msg))
 
             #Obtain the user response
-            user_resp = AgentInput(ai_msg)
-            user_interactions.append(HumanMessage(user_resp))
+            if multi_question_mode:
+                user_resp = AgentInputMulti(resp_struct.questions_to_user, preamble=resp_struct.answer_to_user if len(resp_struct.answer_to_user) else None)
+                user_msg = ""
+                for r in user_resp:
+                    user_msg += "---------------------------------------------\n" + r + "\n"                
+            else:
+                user_msg = AgentInput(ai_msg)
+
+            user_interactions.append(HumanMessage(user_msg))
     return obj
 
 

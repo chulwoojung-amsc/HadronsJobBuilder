@@ -1,6 +1,11 @@
 from typing import Callable, Tuple, Dict, Any, Union
 from inspect import signature, getdoc, currentframe
+import inspect
 from pydantic import BaseModel
+from .agent_workflow_base import BaseGroupHandle
+from typing import get_args, get_origin
+import types
+import typing
 
 counter = 0 #for unique indexing of graph nodes
 def getUniqueIdx():
@@ -9,12 +14,12 @@ def getUniqueIdx():
     return counter - 1
 
 #Workflow operations registry
-registry = []
+registry = {}
 
-def addWorkflowOperationToRegistry(op: Callable):
-    print("addWorkflowOperationToRegistry ", op.__name__)
-    if op not in registry:
-        registry.append(op)
+def addWorkflowOperationToRegistry(op_internal: Callable, op_call: Callable):
+    print("addWorkflowOperationToRegistry ", op_internal.__name__)
+    if op_internal.__name__ not in registry.keys():
+        registry[op_internal.__name__] = (op_internal, op_call) #first is used only for the signature
 
 #Names that cannot be used by the agents
 reserved_names = []
@@ -39,25 +44,57 @@ def registerWorkflowOperation(*, instance_info: Tuple[str,type] | None = None  )
     """
 
     def wrap(workflow_operation: Callable):    
+        sig = signature(workflow_operation)
+        pcheck = {}
+        
+        for name, param in sig.parameters.items():            
+            if param.annotation is not inspect.Parameter.empty:
+                if get_origin(param.annotation) in (types.UnionType, typing.Union):
+                    ptypes = get_args(param.annotation)
+                    #Allow None or BaseGroupHandle derivative
+                    is_handle=True
+                    for t in ptypes:
+                        if t is not types.NoneType and not issubclass(t, BaseGroupHandle):
+                            is_handle = False
+                            break
+                    if is_handle:
+                        pcheck[name] = ptypes                        
+                elif inspect.isclass(param.annotation) and issubclass(param.annotation, BaseGroupHandle):
+                    pcheck[name] = (param.annotation,)
+                                
+
         if instance_info is not None:
             instance_class, instance_model = instance_info
             addReservedName(instance_class) #stop the agent using the instance class name for a group or instance            
-            registerInstanceClass(instance_class, instance_model) #record the mapping between the class and its Pydantic model
+            registerInstanceClass(instance_class, instance_model) #record the mapping between the class and its Pydantic model        
 
-        addWorkflowOperationToRegistry(workflow_operation) #register the workflow operation so the routing agent can use it
-        return workflow_operation
+        def wrapOperation(*args, **kwargs):            
+            sig = signature(workflow_operation)
+            sargs = sig.bind(*args, **kwargs)
+
+            for name, value in sargs.arguments.items():
+                if name in pcheck:                    
+                    if type(value) not in pcheck[name]:
+                        raise Exception(f"Argument {name} accepts only types {pcheck[name]}")
+            return workflow_operation(*args, **kwargs)                
+
+        addWorkflowOperationToRegistry(workflow_operation, wrapOperation) #register the workflow operation so the routing agent can use it
+
+        return wrapOperation        
     return wrap
 
 
-
-def function_manifest():
+def workflowFunctionManifest():
     lines = []
-    for fn in registry:
-        name = fn.__name__
+    for name, r in registry.items():
+        fn = r[0] #for signature        
         sig = signature(fn)
         doc = getdoc(fn) or ""
         lines.append(f"- {name}{sig}: {doc}")
     return "\n".join(lines)
+
+def workflowFunctionSymtable():
+    return { fname : r[1] for fname, r in registry.items() } 
 
 
 #Registry for models allowed for Union types within instance models

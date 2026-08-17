@@ -115,7 +115,7 @@ class SolverGroup(BaseGroup):
     code: str = Field(..., description="Code for generating the list of solver instances in the group")
 
 @registerWorkflowOperation(instance_info=("solvers", SolverConfig) )       
-def createSolverGroup(group_name: str, actions: ActionGroupHandle, eigensolver: None | EigenSolverGroupHandle = None)->SolverGroupHandle:    
+def createSolverGroup(group_name: str, actions: ActionGroupHandle, eigensolver: None | EigenSolverGroupHandle = None)->SolverGroupHandle:
     checkValidNewGroupName(group_name)
     def doit(group_name, gactions_group_name: str, geigensolver_group_name : str | None):
         state, llm_model = getCurrentState()

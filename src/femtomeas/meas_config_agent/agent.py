@@ -23,7 +23,7 @@ from femtomeas.workflow_manager.manager_config import readManagerConfigFile
 from femtomeas.agent_common.agent_config import readI2APIkey
 from .state import State, checkpointState
 from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState, reserved_names, initializeState
-from .agent_workflow_globals import registry, registerWorkflowOperation, function_manifest, getUniqueIdx
+from .agent_workflow_globals import registerWorkflowOperation, workflowFunctionManifest, workflowFunctionSymtable, getUniqueIdx
 from femtomeas.agent_common.callgraph import Node
 from .gauge import identifyGaugeConfigs
 
@@ -103,7 +103,7 @@ class AgentOutput(BaseModel):
     code: str = Field(..., description="Python code for performing the required steps")
 
 
-def subWorkflowAgent(llm_model, checkpoint_state: Tuple[bool, str] = (False, "")  ):
+def subWorkflowAgent(llm_model, checkpoint_state: Tuple[bool, str] = (False, "")  ):    
     do_checkpoint, checkpoint_file = checkpoint_state
 
     role = f"""creating a code snippet that performs the instructions provided by the user during your conversation.
@@ -120,7 +120,7 @@ If the user asks you questions you must answer them.
 -------------
 Registry
 -------------
-{function_manifest()}
+{workflowFunctionManifest()}
 
 -------------
 Code rules
@@ -156,11 +156,11 @@ The following group names are reserved and cannot be used: f{reserved_names}
 
     graphs = None
     
-    def validator(obj):
-        reg_dict = { f.__name__ : f for f in registry }   
+    def validator(obj):        
+        reg_dict = workflowFunctionSymtable()
 
-        symtable_in = asteval.make_symbol_table(use_numpy=False, **reg_dict) #**registry)
-        aeval = asteval.Interpreter(symtable=symtable_in)
+        symtable_in = asteval.make_symbol_table(use_numpy=False, **reg_dict)
+        aeval = asteval.Interpreter(symtable=symtable_in)        
         aeval(obj.code)
 
         errors = ""
