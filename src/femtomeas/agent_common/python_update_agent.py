@@ -282,7 +282,7 @@ def parameterAgent(llm_model, structured_output_model : BaseModel,
                    instance_validator : Callable | None = None,
                    group_validator : Callable | None = None,
                    used_instance_list_checker : Callable = lambda m: True, #a custom checked for instances referred to in the used-instance list to test whether they remain valid
-                   multi_question_mode: bool = False #the agent can ask multiple questions at the same time (user still answers consecutively)
+                   multi_question_mode: bool = True #the agent can ask multiple questions at the same time (user still answers consecutively)
                    ):
 
     agent_state.reset()    

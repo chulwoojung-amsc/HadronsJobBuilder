@@ -6,13 +6,13 @@ from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceI
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
 from .solver_config_models import SolverConfig, RBPrecCGsolver
 from .state import State
-from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
+from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState, startWorkflowMessage
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
 from femtomeas.agent_common.callgraph import Node
 from .action_config import ActionGroup, ActionGroupHandle
 from .eigenvectors import EigenSolverGroup, EigenSolverGroupHandle
 
-def identifySolvers(model, group_name: str, action_group_name: str,  eigensolver_group_name : str | None, state: State):    
+def identifySolvers(model, group_name: str, action_group_name: str,  eigensolver_group_name : str | None, state: State, extra_info: str = ""):    
     action_group_code = state.groups[action_group_name].code
 
     use_evecs = eigensolver_group_name is not None
@@ -102,7 +102,8 @@ You must adhere to the following rules for generating solver instances:
     inst = state.getInstanceCode("solvers")
 
     updated_solver_code, group_solver_code, _ = parameterAgent(model, SolverConfig, "solvers", inst.value, group_name, None, role, tools=[], \
-                                                            parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=checkAll, instance_validator=lambda a: a.check(state), additional_user_query_rules=additional_user_query_rules)
+                                                            parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=checkAll, instance_validator=lambda a: a.check(state), additional_user_query_rules=additional_user_query_rules,
+                                                            input_messages=startWorkflowMessage(extra_info))
     inst.value = updated_solver_code
     return group_solver_code
     
@@ -115,7 +116,12 @@ class SolverGroup(BaseGroup):
     code: str = Field(..., description="Code for generating the list of solver instances in the group")
 
 @registerWorkflowOperation(instance_info=("solvers", SolverConfig) )       
-def createSolverGroup(group_name: str, actions: ActionGroupHandle, eigensolver: None | EigenSolverGroupHandle = None)->SolverGroupHandle:
+def createSolverGroup(group_name: str, actions: ActionGroupHandle, eigensolver: None | EigenSolverGroupHandle = None, *, user_info: str = "")->SolverGroupHandle:
+    """Create a group of propagator solver module instances. These compute the inverse of the action's Dirac operator. Eigenvectors can be used to speed up the inversion, if available.
+
+user_info: if specified by the user, provide the solver types or any other parameters related to the solvers.
+    """
+
     checkValidNewGroupName(group_name)
     def doit(group_name, gactions_group_name: str, geigensolver_group_name : str | None):
         state, llm_model = getCurrentState()
@@ -124,7 +130,7 @@ def createSolverGroup(group_name: str, actions: ActionGroupHandle, eigensolver: 
         if geigensolver_group_name is not None:
             assert geigensolver_group_name in state.groups and isinstance(state.groups[geigensolver_group_name], EigenSolverGroup)
 
-        state.groups[group_name] = SolverGroup(code = identifySolvers(llm_model, group_name, gactions_group_name, geigensolver_group_name, state ))   
+        state.groups[group_name] = SolverGroup(code = identifySolvers(llm_model, group_name, gactions_group_name, geigensolver_group_name, state, user_info ))   
         print("createSolverGroup: ", state.groups[group_name].code,  "\nSolvers is now: ", state.instances["solvers"])   
         return group_name
 

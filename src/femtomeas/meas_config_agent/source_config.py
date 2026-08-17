@@ -6,11 +6,11 @@ from femtomeas.agent_common.python_update_agent import parameterAgent
 from .meas_agent_common import Gammas
 from .source_config_models import SourceConfig, SeqGammaSource
 from .state import State
-from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
+from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState, startWorkflowMessage
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
 from femtomeas.agent_common.callgraph import Node
 
-def identifySources(model, group_name : str, state : State):
+def identifySources(model, group_name : str, state : State, extra_info: str = ""):
     role = """creating instances of SourceConfig for every propagator source required by the user.
 
     Sources are inputs to constructing quark propagators. A source instance has a source type (e.g. point, wall) along with a set of parameters that depend on the source type.
@@ -85,7 +85,7 @@ def identifySources(model, group_name : str, state : State):
     inst = state.getInstanceCode("sources")
     
     updated_source_code, group_source_code, _ = parameterAgent(model, SourceConfig, "sources", inst.value, group_name, None, role, \
-                                                            tools=[], parameter_rules=parameter_rules, group_validator=checkAll, instance_validator=instanceCheck,  additional_user_query_rules=additional_user_query_rules, user_info_rules=user_info_rules )
+                                                            tools=[], parameter_rules=parameter_rules, group_validator=checkAll, instance_validator=instanceCheck,  additional_user_query_rules=additional_user_query_rules, user_info_rules=user_info_rules, input_messages=startWorkflowMessage(extra_info) )
     inst.value = updated_source_code
     return group_source_code
 
@@ -98,12 +98,17 @@ class SourceGroup(BaseGroup):
     code: str = Field(..., description="Code for generating the list of source instances in the group")
 
 @registerWorkflowOperation(instance_info=("sources", SourceConfig) )     
-def createSourceGroup(group_name: str)->SourceGroupHandle:
+def createSourceGroup(group_name: str, *, user_info: str = "")->SourceGroupHandle:
+    """Create a group of propagator source module instances.
+
+user_info: if specified by the user, provide the source types or any other parameters related to the sources.
+    """
+
     def doit(group_name: str):
         state, llm_model = getCurrentState()
         #agent builds a group, adding new source instances as needed
         assert group_name not in state.groups
-        state.groups[group_name] = SourceGroup(code = identifySources( llm_model, group_name, state ))   
+        state.groups[group_name] = SourceGroup(code = identifySources( llm_model, group_name, state, user_info ))   
         print("createSourceGroup: ", state.groups[group_name].code,  "\nSources is now: ", state.instances["sources"])    
         return group_name
 

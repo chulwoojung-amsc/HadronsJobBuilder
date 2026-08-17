@@ -3,6 +3,7 @@ from typing import Tuple, TypeVar, ClassVar, Callable
 from .agent_workflow_base import BaseGroup, BaseGroupHandle, GroupTypes, GroupHandleTypes
 from .state import State
 from .agent_workflow_globals import reserved_names
+from langchain.messages import HumanMessage
 
 state = State()
 llm_model_glob = None
@@ -25,3 +26,9 @@ def checkValidNewGroupName(group_name: str):
     assert group_name not in state.groups
     assert group_name not in reserved_names
     assert isinstance(group_name, str)
+
+def startWorkflowMessage(extra_info : str = ""):
+    msg = "Start your workflow."
+    if len(extra_info):
+        msg += f" The following information has been provided by the user: {extra_info}"
+    return [HumanMessage(msg)]

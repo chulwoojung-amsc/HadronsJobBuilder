@@ -4,13 +4,13 @@ from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceI
 from .smeared_prop_config_models  import SmearedPropagatorConfig
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
 from .state import State
-from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
+from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState, startWorkflowMessage
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
 from femtomeas.agent_common.callgraph import Node
 from typing import ClassVar
 from .propagator_config import PropagatorGroup, PropagatorGroupHandle
 
-def identifySmearedPropagators(model, group_name: str, input_props_group_name:str, state: State):
+def identifySmearedPropagators(model, group_name: str, input_props_group_name:str, state: State, extra_info : str):
     input_props_group_code = state.groups[input_props_group_name].code
 
     role = f"""creating configurations for each smeared propagator required by the user.
@@ -63,7 +63,7 @@ def identifySmearedPropagators(model, group_name: str, input_props_group_name:st
     inst = state.getInstanceCode("smeared_propagators")
 
     updated_sprop_code, group_sprop_code, _ = parameterAgent(model, SmearedPropagatorConfig, "smeared_propagators", inst.value, group_name, None, \
-                                                            role, tools=[], parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=checkAll, instance_validator=instanceCheck )        
+                                                            role, tools=[], parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=checkAll, instance_validator=instanceCheck, input_messages=startWorkflowMessage(extra_info) )        
 
     inst.value = updated_sprop_code
     return group_sprop_code
@@ -77,14 +77,14 @@ class SmearedPropagatorGroup(BaseGroup):
     code: str = Field(..., description="Code for generating the list of sink-smeared propagator instances in the group")
 
 @registerWorkflowOperation(instance_info=("smeared_propagators", SmearedPropagatorConfig) )        
-def createSmearedPropagatorGroup(group_name: str, unsmeared_props: PropagatorGroupHandle)->SmearedPropagatorGroupHandle:
+def createSmearedPropagatorGroup(group_name: str, unsmeared_props: PropagatorGroupHandle, *, user_info: str = "")->SmearedPropagatorGroupHandle:
     checkValidNewGroupName(group_name)
 
     def doit(group_name, gunsmeared_prop_group_name: str):
         state, llm_model = getCurrentState()
         assert gunsmeared_prop_group_name in state.groups and isinstance(state.groups[gunsmeared_prop_group_name], PropagatorGroup)        
 
-        state.groups[group_name] = SmearedPropagatorGroup(code = identifySmearedPropagators(llm_model, group_name, gunsmeared_prop_group_name, state) )
+        state.groups[group_name] = SmearedPropagatorGroup(code = identifySmearedPropagators(llm_model, group_name, gunsmeared_prop_group_name, state, user_info) )
         return group_name
    
     return SmearedPropagatorGroupHandle(group_name, Node(f"createSmearedPropagatorGroup_{getUniqueIdx()}", lambda gunsmeared_props: doit(group_name, gunsmeared_props), input_deps=[unsmeared_props] ) )

@@ -102,20 +102,35 @@ def listGroupHandles()->List[Tuple[str,str] ] | None:
 class AgentOutput(BaseModel):
     code: str = Field(..., description="Python code for performing the required steps")
 
+# When executed later, these functions call subagents who will query the user for module parameters and types and then append "module" class instances to a hidden internal state. Your only responsibility is to *plan* through your code the sequence of subagent calls as required by the user. You are not responsible for obtaining the parameters of those module instances or their types. These parameters are not required to call the function.
+# - When your workflow is complete, review the user's messages and compile any relevant information about module instances into the "user_info" parameter of a function, if it exists.    
+#     - This field is NOT REQUIRED for a valid workflow. The subagents will ask the user for any parameters it does not know.
+#     - You must choose the value of this parameter, based on user input.
+#     - Only pass information relevant to the module type associated with the function. 
+#     - Pass ALL information the user has provided about the parameters of those module instances and their types, even if the same information is passed multiple times.
+#     - If the user does not provide any information, do not specify this parameter. NEVER guess this parameter. You MUST only specify this parameter if the user has provided relevant information.
+#     - NEVER ask the user to provide user_info.
+
 
 def subWorkflowAgent(llm_model, checkpoint_state: Tuple[bool, str] = (False, "")  ):    
+    print("MANIFEST\n", workflowFunctionManifest())
+
+
     do_checkpoint, checkpoint_file = checkpoint_state
 
-    role = f"""creating a code snippet that performs the instructions provided by the user during your conversation.
+    role = f"""creating a Python code snippet that plans the *logical* structure of a lattice QCD measurement workflow based on instructions provided by the user during your conversation. Parameters and other details are not needed at this stage.
 
 When you begin your workflow, ask the user for instructions.
 
-Your code snippet must employ the functions in the "Registry" below to construct these module instances for this particular observable. These functions act upon a hidden internal state and query the user internally. Your focus should only be on calling these tools in the appropriate order. Follow the "Code rules" below. 
+Your code snippet must employ the functions in the "Registry" below. Follow the "Code rules" below. 
 
 Do not ask the user to confirm or accept your code.
 Never ask the user to provide the code.
+NEVER ask the user to provide parameters or types used in the code, other than group names.
 
 If the user asks you questions you must answer them.
+
+If there are multiple valid sequences to achieve the user's workflow, ask the user questions to determine which they would like to use. Do not ask the user to confirm steps that are mandatory.
 
 -------------
 Registry
@@ -125,16 +140,17 @@ Registry
 -------------
 Code rules
 -------------
-- Do not import any modules or functions; assume that the functions in the registry have already been imported.
-- Functions in the registry act on a hidden internal state. The inputs and outputs are merely handles for chaining the logic. Handles must all be consumed within the code snippet; do not store them in any output structures (lists, dictionaries, etc)
+- Do not import any Python modules or functions; assume that the functions in the registry have already been imported.
+- Handles must all be consumed within the code snippet; do not store them in any output structures (lists, dictionaries, etc)
 - Your snippet should only perform the user's instructions and nothing else. Do not add code to write outputs.
 - The output handles from your code snippet should be stored in an array named 'results'. Only store the handles for the outputs (i.e. the last calls in any given chain), not the intermediaries.
 - If the user specifies that they do not want any steps in the workflow, output an empty array named 'results'.
-
+- For user_info, only include information that the user voluntarily provides without you asking. NEVER guess or hallucinate its content. NEVER ask the user about this parameter.
+  e.g. If the user says "Create an action group with DWF fermions", set user_info to "User specified DWF fermions"
+  
 -----------
 Tool usage
 -----------
-- The workflow you define may be one of many. You have been provided tools (listGroupHandles, listWorkflows, retrieveWorkflowCode) that you can use to obtain information about previously-created groups and workflows.
 - If a tool for obtaining a list returns an empty list, interpret this as meaning no elements currently exist. NEVER repeatedly call the same tool over and over if it returns an empty list.
 
 ---------
@@ -145,10 +161,15 @@ The following group names are reserved and cannot be used: f{reserved_names}
 """
 
     user_query_rules = [
-    "You can only ask the user questions about the sequence of registry function calls", 
+    "You can *ONLY* ask the user questions about the sequence of Registry function calls and the group names, and NOTHING ELSE.",
+    "You MUST NOT ask any question that does not pertain to the order of Registry function calls or their group names",         
     "NEVER ask the user to provide details on groups or their parameters.",
+    "NEVER ask the user for module parameters or types.",
+    "****NEVER***** ask the user about parameters of a module.",
+    "NEVER guess the parameters of the modules created by a function and attempt to obtain them from the user.",
     "If there are optional steps, you MUST ask the user if they want to perform those steps; NEVER make assumptions.",
-    "You are allowed to choose group names if they have not been specified by the user, unless otherwise directed. Never tell the user that you cannot choose a group name for them."
+    "You are allowed to choose group names if they have not been specified by the user, unless otherwise directed. Never tell the user that you cannot choose a group name for them.",
+    "Any questions about module instance types ARE FORBIDDEN."
     ]
 
     def printCode(obj):

@@ -2,13 +2,13 @@ from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo, executeCodeAndParse
 from .eigenvectors_models import EigenSolverConfig
 from .state import State
-from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName,getCurrentState
+from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName,getCurrentState, startWorkflowMessage
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
 from femtomeas.agent_common.callgraph import Node
 from .action_config import ActionGroup, ActionGroupHandle
 from typing import ClassVar
 
-def identifyEigenSolvers(model, group_name: str, action_group_name: str,  state: State):     
+def identifyEigenSolvers(model, group_name: str, action_group_name: str,  state: State, extra_info : str):     
     action_group_code = state.groups[action_group_name].code
    
     role = f"""identifying the lattice QCD Dirac operator eigenvector solvers (aka, "eigensolvers") required by the user. 
@@ -72,7 +72,7 @@ def identifyEigenSolvers(model, group_name: str, action_group_name: str,  state:
     inst = state.getInstanceCode("eigensolvers")
 
     updated_eig_code, group_eig_code, _ = parameterAgent(model, EigenSolverConfig, "eigensolvers", inst.value, group_name, None, \
-                                                        role, tools=[], tool_rules=[], parameter_rules=parameter_rules, additional_user_query_rules=additional_user_query_rules, instance_validator=check, group_validator=groupCheck, user_info_rules=user_info_rules)
+                                                        role, tools=[], tool_rules=[], parameter_rules=parameter_rules, additional_user_query_rules=additional_user_query_rules, instance_validator=check, group_validator=groupCheck, user_info_rules=user_info_rules, input_messages=startWorkflowMessage(extra_info))
     inst.value = updated_eig_code
     return group_eig_code
 
@@ -84,13 +84,13 @@ class EigenSolverGroup(BaseGroup):
     code: str = Field(..., description="Code for generating the list of eigensolver instances in the group")
 
 @registerWorkflowOperation(instance_info=("eigensolvers", EigenSolverConfig) )   
-def createEigenSolverGroup(group_name: str, actions: ActionGroupHandle)->EigenSolverGroupHandle:
+def createEigenSolverGroup(group_name: str, actions: ActionGroupHandle, *, user_info: str = "")->EigenSolverGroupHandle:
     checkValidNewGroupName(group_name)
     def doit(group_name, gactions_group_name: str):
         state, llm_model = getCurrentState()
         assert gactions_group_name in state.groups and isinstance(state.groups[gactions_group_name], ActionGroup)
 
-        state.groups[group_name] = EigenSolverGroup(code = identifyEigenSolvers(llm_model, group_name, gactions_group_name, state ))   
+        state.groups[group_name] = EigenSolverGroup(code = identifyEigenSolvers(llm_model, group_name, gactions_group_name, state, user_info ))   
         print("createEigenSolverGroup: ", state.groups[group_name].code,  "\nEigensolvers is now: ", state.instances["eigensolvers"])   
         return group_name
    

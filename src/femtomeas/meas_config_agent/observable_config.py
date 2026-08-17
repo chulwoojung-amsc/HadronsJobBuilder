@@ -5,7 +5,7 @@ from .meas_agent_common import Gammas
 from .observable_config_models import ObservableConfig, getMesonGammas, mesonSpecialKeywords, ContractionSinkNone
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
 from .state import State
-from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
+from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState, startWorkflowMessage
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
 from femtomeas.agent_common.callgraph import Node
 from .propagator_config import PropagatorGroupHandle, PropagatorGroup
@@ -16,7 +16,7 @@ def getMesonGammasTool(op : mesonSpecialKeywords)-> List[Gammas]:
     """Get the list of Gammas (combination of Gamma-matrices in the Euclidean Clifford algebra) associated with a particular meson operator in the list of special meson keywords"""
     return getMesonGammas(op)
 
-def configureMeson2pt(model, group_name: str, prop_group_name:str, state: State):
+def configureMeson2pt(model, group_name: str, prop_group_name:str, state: State, extra_info : str):
     prop_group_code = state.groups[prop_group_name].code
     is_smeared = isinstance(state.groups[prop_group_name], SmearedPropagatorGroup)
 
@@ -117,9 +117,9 @@ ObservableConfig instances rules
     ]
 
     inst = state.getInstanceCode("observable_configs")
-    
+   
     updated_obs_code, obs_group_code, _ = parameterAgent(model, ObservableConfig, "observable_configs", inst.value, group_name, None,\
-                                                        role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, instance_validator=instanceCheck, user_info_rules=user_info_rules, additional_user_query_rules=additional_user_query_rules)
+                                                        role, tools=tools, tool_rules=tool_rules, parameter_rules=parameter_rules, instance_validator=instanceCheck, user_info_rules=user_info_rules, additional_user_query_rules=additional_user_query_rules, input_messages=startWorkflowMessage(extra_info))
 
     inst.value = updated_obs_code
     return obs_group_code
@@ -133,8 +133,10 @@ class Meson2ptGroup(BaseGroup):
     code: str = Field(..., description="Code for generating the list of meson 2pt function instances in the group")
 
 @registerWorkflowOperation(instance_info=("observable_configs", ObservableConfig) )
-def createMeson2ptGroup(group_name: str, propagators: PropagatorGroupHandle | SmearedPropagatorGroupHandle)->ObservableGroupHandle:
-    """Create a Meson2ptGroup and return its handle
+def createMeson2ptGroup(group_name: str, propagators: PropagatorGroupHandle | SmearedPropagatorGroupHandle, *, user_info: str = "")->ObservableGroupHandle:
+    """Create a Meson2ptGroup and return its handle.
+
+user_info: if specified by the user, provide the meson type(s) or other information relevant to creating these observables from the input propagators.
 
 The meson two-point function (aka meson correlator) is used to describe the lattice propagation of a meson such as a pion or kaon        
     """
@@ -142,7 +144,7 @@ The meson two-point function (aka meson correlator) is used to describe the latt
     def doit(group_name, gprops_group_name: str): 
         state, llm_model = getCurrentState()
         assert gprops_group_name in state.groups and isinstance(state.groups[gprops_group_name], (PropagatorGroup, SmearedPropagatorGroup) )
-        state.groups[group_name] = Meson2ptGroup(code = configureMeson2pt(llm_model, group_name, gprops_group_name, state) )
+        state.groups[group_name] = Meson2ptGroup(code = configureMeson2pt(llm_model, group_name, gprops_group_name, state, user_info) )
         return group_name
    
     return ObservableGroupHandle(group_name, Node(f"createMeson2ptGroup_{getUniqueIdx()}", lambda gprops: doit(group_name, gprops), input_deps=[propagators] ) )

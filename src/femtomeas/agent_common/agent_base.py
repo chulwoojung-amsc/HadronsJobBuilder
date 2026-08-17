@@ -153,6 +153,7 @@ def generalParameterRules(output_type_name, is_conversational: bool = True):
     ------------------------------------------------------------------------------------------------------------
     - Obtain the values for the parameters in the order they appear in {output_type_name}        
     - **Never** guess a parameter that should be provided by the user. These values should always be obtained from the user. Never record such a parameter value unless it has been explicitly provided by the user.    
+    - Never ask the user about parameters that are not in the {output_type_name} structure
 """
     if is_conversational:
         out += """    - If there is only one option for a parameter you must use that value. The first time this choice appears in your output you MUST also tell the user that you have made this choice in the "answer_to_user" field.
@@ -305,9 +306,9 @@ Current {output_type_name} params struct
         questions = resp_struct.questions_to_user if multi_question_mode else resp_struct.question_to_user
 
         #Check it followed the rules about questions/answers
-        if resp_struct.done and ( len(questions) > 0 or  len(resp_struct.answer_to_user) > 0 ):
-            user_interactions.append(HumanMessage("You cannot answer or ask a question if 'done' is set to True"))
-            print("DONE TRUE BUT QUESTION", questions,"OR ANSWER",resp_struct.answer_to_user)
+        if resp_struct.done and len(questions) > 0:
+            user_interactions.append(HumanMessage("You cannot ask a question if 'done' is set to True"))
+            print("DONE TRUE BUT QUESTION", questions)
             continue
         if not resp_struct.done and len(questions) == 0:
             user_interactions.append(HumanMessage("Your response must include a question unless you are done"))

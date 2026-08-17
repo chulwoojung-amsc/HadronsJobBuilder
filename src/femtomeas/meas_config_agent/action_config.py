@@ -8,10 +8,11 @@ from femtomeas.agent_common.python_update_agent import parameterAgent
 from femtomeas.agent_common.callgraph import Node
 from .action_config_models import ActionConfig
 from .state import State
-from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
+from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState, startWorkflowMessage
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
 
-def identifyActions(model, group_name:str, state: State):
+
+def identifyActions(model, group_name:str, state: State, extra_info : str):
     role = """identifying all lattice QCD action instances required by the user.
 
 The rules for identifying the required action instances are:
@@ -38,10 +39,10 @@ The rules for identifying the required action instances are:
                     return (False, f"Action instances {actions[i].name} and {actions[j].name} have the same parameters. Action instances must be unique.")
         return (True, "")
 
-    inst = state.getInstanceCode("actions")
+    inst = state.getInstanceCode("actions")    
     
     updated_action_code, group_action_code, _ = parameterAgent(model, ActionConfig, "actions", inst.value, group_name, None, role, tools=[], \
-                                                           tool_rules=[], parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=group_validate)
+                                                           tool_rules=[], parameter_rules=parameter_rules, user_info_rules=user_info_rules, group_validator=group_validate, input_messages=startWorkflowMessage(extra_info))
 
     inst.value = updated_action_code
     return group_action_code
@@ -55,12 +56,17 @@ class ActionGroup(BaseGroup):
     code: str = Field(..., description="Code for generating the list of action instances in the group")
 
 @registerWorkflowOperation(instance_info=("actions", ActionConfig) )
-def createActionGroup(group_name: str)->ActionGroupHandle:
+def createActionGroup(group_name: str, *, user_info: str = "")->ActionGroupHandle:
+    """Create a group of fermion/quark action module instances.
+
+user_info: if specified by the user, provide the action types or any other parameters related to the quark action.
+    """
+
     def doit(group_name: str):
         state, llm_model = getCurrentState()
         #agent builds a group, adding new action instances as needed
         assert group_name not in state.groups
-        state.groups[group_name] = ActionGroup(code = identifyActions(llm_model, group_name, state )    ) 
+        state.groups[group_name] = ActionGroup(code = identifyActions(llm_model, group_name, state, user_info )    ) 
         print("createActionGroup: ", state.groups[group_name].code,  "\nActions is now: ", state.instances["actions"])   
         return group_name
 
