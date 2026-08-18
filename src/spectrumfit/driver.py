@@ -47,7 +47,46 @@ class FitResult:
         return '\n'.join(lines)
 
 
+def engineLimitations(config: FitConfig):
+    """Reasons the chosen engine cannot perform the requested fit, as
+    human-readable strings. Empty means it can. Users pick the engine; this lets
+    the caller tell them plainly when their choice can't do what they asked rather
+    than silently doing something else."""
+    e, m, ds, rc = config.run.engine, config.model, config.dataset, config.run
+    problems = []
+    if e == "pysarlac":
+        #PySARLaC ships only FitCosh: one periodic-cosh state, one channel.
+        if m.Nmass != 1:
+            problems.append(f"multi-state fits (Nmass={m.Nmass}) - PySARLaC fits a single cosh state (needs Nmass=1)")
+        if m.NmassAlt != 0:
+            problems.append(f"alternating-sign states (NmassAlt={m.NmassAlt}) - not available in PySARLaC")
+        if len(ds.i_fit) != 1:
+            problems.append(f"multi-channel fits (i_fit={ds.i_fit}) - PySARLaC fits one channel at a time")
+        if config.preprocess.use_gevp:
+            problems.append("GEVP preprocessing - not available in PySARLaC")
+        if rc.tmin_tuning != "none":
+            problems.append(f"tmin tuning ('{rc.tmin_tuning}') - not available in PySARLaC")
+    return problems
+
+
+def _checkEngine(config: FitConfig):
+    problems = engineLimitations(config)
+    if problems:
+        alt = "spectrumfit" if config.run.engine == "pysarlac" else "pysarlac"
+        raise Exception(
+            f"The '{config.run.engine}' fit engine cannot do this fit:\n"
+            + "\n".join(f"  - {p}" for p in problems)
+            + f"\nEither use engine='{alt}', or adjust the request to what "
+            f"'{config.run.engine}' supports.")
+
+
 def runFit(config: FitConfig) -> FitResult:
+    _checkEngine(config)
+
+    if config.run.engine == "pysarlac":
+        from .pysarlac_engine import runFitPySARLaC
+        return runFitPySARLaC(config)
+
     ctx = FitContext(config)
     st, rc = config.stats, config.run
 

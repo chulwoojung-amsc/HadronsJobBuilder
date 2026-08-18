@@ -75,6 +75,9 @@ class StatConfig(_AgentFriendly):
 
 class RunConfig(_AgentFriendly):
     """Optimizer, refinement, tuning and output options."""
+    engine: Literal["spectrumfit", "pysarlac"] = Field("spectrumfit",
+        description="Fit engine: 'spectrumfit' (in-house multi-exponential optimizer) or "
+        "'pysarlac' (PySARLaC distribution-native single periodic-cosh fit)")
     optimizer: Literal["scipy", "custom"] = Field("scipy", description="BFGS implementation")
     use_de_refinement: bool = Field(True, description="Refine the multi-start result with differential evolution on profiled chi^2")
     de_popsize: int = Field(12, description="DE individuals per dimension")

@@ -10,6 +10,24 @@ Two input formats are supported (`DatasetConfig.format`, default `auto`):
 `flat_text` (96I `.dat`) and `hadrons_xml` (`MContraction::Meson` output, one
 `<base>.out.<traj>.xml` per trajectory, auto-discovered under `data_path`).
 
+Two fit engines are available (`RunConfig.engine`, default `spectrumfit`):
+`spectrumfit` (the in-house multi-exponential optimizer) and `pysarlac`
+(PySARLaC, Christopher Kelly's distribution-native fitter). The `pysarlac` engine
+does a single periodic-cosh ground-state fit `A(e^-mt + e^-m(Lt-t))` over one
+channel and a plateau window, with jackknife errors straight from the parameter
+distribution and `StatConfig.LW` diagonal shrinkage (needed when Nsample is small,
+or the sample covariance is singular). Example: `main/fit_pion_pysarlac.json`
+(`m=0.574(11)` over t in [5,8] of the six-config pion). PySARLaC lives in
+`PySARLaC/` and is added to the path lazily only when this engine is selected.
+
+You choose the engine; the tool does not silently substitute one for another. If
+the chosen engine cannot do the requested fit, `runFit` refuses with a message
+listing exactly what is unsupported and which engine to use instead. `pysarlac`
+supports only a single cosh ground state of a single channel, so it refuses
+multi-state (`Nmass>1`/`NmassAlt>0`), multi-channel (`len(i_fit)>1`), GEVP, and
+tmin tuning; `spectrumfit` supports all of these. `driver.engineLimitations(config)`
+returns the same list programmatically (empty = the engine can do it).
+
 The CLI `main/fit_workflow.py` has both a batch path and a staged conversational
 agent (`spectrumfit/fit_agent.py`).
 

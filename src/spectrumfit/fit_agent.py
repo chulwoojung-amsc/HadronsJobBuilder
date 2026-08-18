@@ -123,7 +123,8 @@ def _run_stage(model, messages):
     role = ("choosing optimizer, refinement, tuning and output options, based "
             "solely on user input.")
     parameter_rules = [
-        """use_de_refinement: differential-evolution refinement of the multi-start fit. Default True; note it is the slow part and False is fine for exploration.""",
+        """engine: the fit engine. 'spectrumfit' (default) is the in-house multi-exponential optimizer and can do everything. 'pysarlac' is PySARLaC's distribution-native fitter and only does a single periodic-cosh ground-state fit of one channel (requires Nmass=1, NmassAlt=0, a single i_fit entry, no GEVP, no tmin tuning). If the user picks 'pysarlac' but earlier chose a multi-state or multi-channel fit, warn them that the fit will be refused and they should either switch to 'spectrumfit' or simplify the fit.""",
+        """use_de_refinement: differential-evolution refinement of the multi-start fit. Default True; note it is the slow part and False is fine for exploration. Only applies to the spectrumfit engine.""",
         """tmin_tuning: 'none', 'optuna' or 'sa'. Default 'none'.""",
         """make_plots: whether to save diagnostic PDFs. Default True.""",
         """plot_dir, suffix: output directory and file suffix. Leave unset to use the package default ({data_path}Nbin{Nbin}_spec/); the manager config's output_dir may fill plot_dir.""",
