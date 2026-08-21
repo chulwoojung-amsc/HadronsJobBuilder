@@ -5,8 +5,9 @@ from .meas_agent_common import Gammas
 from .observable_config_models import ObservableConfig, getMesonGammas, mesonSpecialKeywords, ContractionSinkNone
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
 from .state import State
-from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState, startWorkflowMessage
+from .agent_workflows import checkValidNewGroupName, getCurrentState, startWorkflowMessage
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
+from .agent_workflow_base import BaseRoutingHandle, BaseGroup
 from femtomeas.agent_common.callgraph import Node
 from .propagator_config import PropagatorGroupHandle, PropagatorGroup
 from .smeared_prop_config import SmearedPropagatorGroupHandle, SmearedPropagatorGroup
@@ -125,7 +126,7 @@ ObservableConfig instances rules
     return obs_group_code
 
 
-class ObservableGroupHandle(BaseGroupHandle):
+class ObservableGroupHandle(BaseRoutingHandle):
     pass
 
 class Meson2ptGroup(BaseGroup):
@@ -147,6 +148,6 @@ The meson two-point function (aka meson correlator) is used to describe the latt
         state.groups[group_name] = Meson2ptGroup(code = configureMeson2pt(llm_model, group_name, gprops_group_name, state, user_info) )
         return group_name
    
-    return ObservableGroupHandle(group_name, Node(f"createMeson2ptGroup_{getUniqueIdx()}", lambda gprops: doit(group_name, gprops), input_deps=[propagators] ) )
+    return ObservableGroupHandle(Node(f"createMeson2ptGroup_{getUniqueIdx()}", lambda gprops: doit(group_name, gprops), input_deps=[propagators] ) )
 
 

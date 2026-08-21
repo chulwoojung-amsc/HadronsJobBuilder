@@ -4,8 +4,9 @@ from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceI
 from .smeared_prop_config_models  import SmearedPropagatorConfig
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
 from .state import State
-from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState, startWorkflowMessage
+from .agent_workflows import checkValidNewGroupName, getCurrentState, startWorkflowMessage
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
+from .agent_workflow_base import BaseRoutingHandle, BaseGroup
 from femtomeas.agent_common.callgraph import Node
 from typing import ClassVar
 from .propagator_config import PropagatorGroup, PropagatorGroupHandle
@@ -69,7 +70,7 @@ def identifySmearedPropagators(model, group_name: str, input_props_group_name:st
     return group_sprop_code
 
 
-class SmearedPropagatorGroupHandle(BaseGroupHandle):
+class SmearedPropagatorGroupHandle(BaseRoutingHandle):
     pass
 
 class SmearedPropagatorGroup(BaseGroup):
@@ -87,5 +88,5 @@ def createSmearedPropagatorGroup(group_name: str, unsmeared_props: PropagatorGro
         state.groups[group_name] = SmearedPropagatorGroup(code = identifySmearedPropagators(llm_model, group_name, gunsmeared_prop_group_name, state, user_info) )
         return group_name
    
-    return SmearedPropagatorGroupHandle(group_name, Node(f"createSmearedPropagatorGroup_{getUniqueIdx()}", lambda gunsmeared_props: doit(group_name, gunsmeared_props), input_deps=[unsmeared_props] ) )
+    return SmearedPropagatorGroupHandle(Node(f"createSmearedPropagatorGroup_{getUniqueIdx()}", lambda gunsmeared_props: doit(group_name, gunsmeared_props), input_deps=[unsmeared_props] ) )
 

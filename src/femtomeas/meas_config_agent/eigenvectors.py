@@ -2,8 +2,9 @@ from femtomeas.agent_common.common import *
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo, executeCodeAndParse
 from .eigenvectors_models import EigenSolverConfig
 from .state import State
-from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName,getCurrentState, startWorkflowMessage
+from .agent_workflows import checkValidNewGroupName,getCurrentState, startWorkflowMessage
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
+from .agent_workflow_base import BaseRoutingHandle, BaseGroup
 from femtomeas.agent_common.callgraph import Node
 from .action_config import ActionGroup, ActionGroupHandle
 from typing import ClassVar
@@ -76,7 +77,7 @@ def identifyEigenSolvers(model, group_name: str, action_group_name: str,  state:
     inst.value = updated_eig_code
     return group_eig_code
 
-class EigenSolverGroupHandle(BaseGroupHandle):
+class EigenSolverGroupHandle(BaseRoutingHandle):
     pass
 
 class EigenSolverGroup(BaseGroup):
@@ -94,6 +95,6 @@ def createEigenSolverGroup(group_name: str, actions: ActionGroupHandle, *, user_
         print("createEigenSolverGroup: ", state.groups[group_name].code,  "\nEigensolvers is now: ", state.instances["eigensolvers"])   
         return group_name
    
-    return EigenSolverGroupHandle(group_name, Node(f"createEigenSolverGroup_{getUniqueIdx()}", lambda gactions: doit(group_name, gactions), input_deps=[actions] ) )
+    return EigenSolverGroupHandle(Node(f"createEigenSolverGroup_{getUniqueIdx()}", lambda gactions: doit(group_name, gactions), input_deps=[actions] ) )
 
 

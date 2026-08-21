@@ -6,8 +6,9 @@ from femtomeas.agent_common.python_update_agent import parameterAgent
 from .meas_agent_common import Gammas
 from .source_config_models import SourceConfig, SeqGammaSource
 from .state import State
-from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState, startWorkflowMessage
+from .agent_workflows import checkValidNewGroupName, getCurrentState, startWorkflowMessage
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
+from .agent_workflow_base import BaseRoutingHandle, BaseGroup
 from femtomeas.agent_common.callgraph import Node
 
 def identifySources(model, group_name : str, state : State, extra_info: str = ""):
@@ -90,7 +91,7 @@ def identifySources(model, group_name : str, state : State, extra_info: str = ""
     return group_source_code
 
 
-class SourceGroupHandle(BaseGroupHandle):
+class SourceGroupHandle(BaseRoutingHandle):
     pass
 
 class SourceGroup(BaseGroup):
@@ -113,6 +114,6 @@ user_info: if specified by the user, provide the source types or any other param
         return group_name
 
     checkValidNewGroupName(group_name)
-    return SourceGroupHandle(group_name, Node(f"createSourceGroup_{getUniqueIdx()}", lambda: doit(group_name) ) )
+    return SourceGroupHandle(Node(f"createSourceGroup_{getUniqueIdx()}", lambda: doit(group_name) ) )
 
 

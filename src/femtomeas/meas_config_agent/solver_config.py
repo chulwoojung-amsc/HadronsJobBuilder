@@ -6,8 +6,9 @@ from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceI
 from femtomeas.agent_common.python_output_agent import executeCodeAndParse
 from .solver_config_models import SolverConfig, RBPrecCGsolver
 from .state import State
-from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState, startWorkflowMessage
+from .agent_workflows import checkValidNewGroupName, getCurrentState, startWorkflowMessage
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
+from .agent_workflow_base import BaseRoutingHandle, BaseGroup
 from femtomeas.agent_common.callgraph import Node
 from .action_config import ActionGroup, ActionGroupHandle
 from .eigenvectors import EigenSolverGroup, EigenSolverGroupHandle
@@ -108,7 +109,7 @@ You must adhere to the following rules for generating solver instances:
     return group_solver_code
     
 
-class SolverGroupHandle(BaseGroupHandle):
+class SolverGroupHandle(BaseRoutingHandle):
     pass
 
 class SolverGroup(BaseGroup):
@@ -135,8 +136,8 @@ user_info: if specified by the user, provide the solver types or any other param
         return group_name
 
     if eigensolver is None:
-        return SolverGroupHandle(group_name, Node(f"createSolverGroup_{getUniqueIdx()}", lambda gactions: doit(group_name, gactions, None), input_deps=[actions] ) )
+        return SolverGroupHandle(Node(f"createSolverGroup_{getUniqueIdx()}", lambda gactions: doit(group_name, gactions, None), input_deps=[actions] ) )
     else:
-        return SolverGroupHandle(group_name, Node(f"createSolverGroup_{getUniqueIdx()}", lambda gactions, geigens: doit(group_name, gactions, geigens), input_deps=[actions, eigensolver] ) )
+        return SolverGroupHandle(Node(f"createSolverGroup_{getUniqueIdx()}", lambda gactions, geigens: doit(group_name, gactions, geigens), input_deps=[actions, eigensolver] ) )
 
 

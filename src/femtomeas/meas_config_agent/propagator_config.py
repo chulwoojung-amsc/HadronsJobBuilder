@@ -5,8 +5,9 @@ from femtomeas.agent_common.python_output_agent import executeCodeAndParse
 from femtomeas.agent_common.python_update_agent import parameterAgent, InstanceInfo
 from .propagator_config_models import PropagatorConfig
 from .state import State
-from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState
+from .agent_workflows import checkValidNewGroupName, getCurrentState
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
+from .agent_workflow_base import BaseRoutingHandle, BaseGroup
 from femtomeas.agent_common.callgraph import Node
 from .source_config import SourceGroup, SourceGroupHandle
 from .solver_config import SolverGroup, SolverGroupHandle
@@ -96,7 +97,7 @@ Propagator instance rules
 
 
 
-class PropagatorGroupHandle(BaseGroupHandle):
+class PropagatorGroupHandle(BaseRoutingHandle):
     pass
 
 class PropagatorGroup(BaseGroup):
@@ -115,6 +116,6 @@ def createPropagatorGroup(group_name: str, sources: SourceGroupHandle, solvers: 
         state.groups[group_name] = PropagatorGroup(code = identifyPropagators(llm_model, group_name, gsources_group_name, gsolvers_group_name, state) )
         return group_name
    
-    return PropagatorGroupHandle(group_name, Node(f"createPropagatorGroup_{getUniqueIdx()}", lambda gsources, gsolvers: doit(group_name, gsources, gsolvers), input_deps=[sources,solvers] ) )
+    return PropagatorGroupHandle(Node(f"createPropagatorGroup_{getUniqueIdx()}", lambda gsources, gsolvers: doit(group_name, gsources, gsolvers), input_deps=[sources,solvers] ) )
 
 

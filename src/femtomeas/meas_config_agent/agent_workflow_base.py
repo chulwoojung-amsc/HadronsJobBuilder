@@ -2,11 +2,7 @@ from pydantic import BaseModel, Field, model_serializer, model_validator
 from typing import Tuple, TypeVar, ClassVar, Callable, Any
 from femtomeas.agent_common.callgraph import Node
 from pydantic_core import core_schema
-
-class BaseGroupHandle:
-    def __init__(self, group_name : str, parent_node : Node):
-        self.group_name = group_name
-        self.parent_node = parent_node
+from femtomeas.agent_common.routing_agent_registries import BaseRoutingHandle
 
 class BaseGroup(BaseModel):
     """The base class of all group objects, with appropriate hooks to properly serialize the derived class type information"""
@@ -48,6 +44,3 @@ class BaseGroup(BaseModel):
     @model_serializer(mode="plain")
     def _dump(self) -> dict[str, Any]:
         return {**self.__dict__, "__type__": self.__class__.__name__}
-
-GroupHandleTypes = TypeVar("GroupHandleTypes", bound=BaseGroupHandle)
-GroupTypes = TypeVar("GroupTypes", bound=BaseGroup)

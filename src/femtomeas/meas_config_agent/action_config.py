@@ -8,9 +8,9 @@ from femtomeas.agent_common.python_update_agent import parameterAgent
 from femtomeas.agent_common.callgraph import Node
 from .action_config_models import ActionConfig
 from .state import State
-from .agent_workflows import BaseGroup, BaseGroupHandle, checkValidNewGroupName, getCurrentState, startWorkflowMessage
+from .agent_workflows import checkValidNewGroupName, getCurrentState, startWorkflowMessage
 from .agent_workflow_globals import registerWorkflowOperation, getUniqueIdx
-
+from .agent_workflow_base import BaseRoutingHandle, BaseGroup
 
 def identifyActions(model, group_name:str, state: State, extra_info : str):
     role = """identifying all lattice QCD action instances required by the user.
@@ -48,7 +48,7 @@ The rules for identifying the required action instances are:
     return group_action_code
 
 
-class ActionGroupHandle(BaseGroupHandle):
+class ActionGroupHandle(BaseRoutingHandle):
     pass
 
 class ActionGroup(BaseGroup):
@@ -71,5 +71,5 @@ user_info: if specified by the user, provide the action types or any other param
         return group_name
 
     checkValidNewGroupName(group_name)
-    return ActionGroupHandle(group_name, Node(f"createActionGroup_{getUniqueIdx()}", lambda: doit(group_name) ) )
+    return ActionGroupHandle(Node(f"createActionGroup_{getUniqueIdx()}", lambda: doit(group_name) ) )
 
