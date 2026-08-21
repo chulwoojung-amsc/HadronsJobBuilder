@@ -1,44 +1,23 @@
 from typing import Tuple
 from femtomeas.meas_config_agent.state import State
-from .manager import JobManager, TransferToAction, TransferFromAction, HadronsComputeAction, HadronsJobSpec
+from .manager import JobManager
+from .globus_transfer_action import TransferToAction, TransferFromAction
+from .hadrons_compute_action import HadronsComputeAction, HadronsJobSpec
 from . import globals
 from .logging import wfmanLog
 
-
-from langchain_core.messages import BaseMessage
-from langchain.messages import (
-    SystemMessage,
-    HumanMessage,
-    ToolCall,
-    AIMessage
-)
-
-from pydantic import BaseModel, Field, ConfigDict, NonNegativeInt, TypeAdapter, PositiveFloat, PositiveInt, create_model
-from typing import Literal, Union, List, Optional, Tuple, Any
-from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
-from langchain.agents import create_agent
+from pydantic import BaseModel, Field, PositiveInt
+from typing import List, Tuple, Any
 from langchain.agents.middleware import before_model, after_model, AgentState
-import json
-from femtomeas.agent_common.common import getUserInput, provideInformationToUser, queryYesNo, prettyPrintPydantic, Print as AgentPrint, Input as AgentInput
+from femtomeas.agent_common.common import Print as AgentPrint, Input as AgentInput
 from femtomeas.agent_common.agent_base import parameterAgent
 from femtomeas.workflow_manager.api_general import getKnownMachines, getUserAccountProjects, getMachineQueues, listSpecialGlobusEndpoints
 
 from langchain.tools import tool
 from .hadrons import defaultRankGeom
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.runtime import Runtime
-
-
-from typing import Callable
-from langchain.agents.middleware import (
-    wrap_model_call,
-    ModelRequest,
-    ModelResponse,
-    AgentState,
-    ExtendedModelResponse
-)
-from langgraph.types import Command
-from typing_extensions import NotRequired
+from langchain.agents.middleware import AgentState
+    
 
 
 def enqueueStandardHadronsWorkflow(state : State, jman : JobManager,
@@ -48,6 +27,11 @@ def enqueueStandardHadronsWorkflow(state : State, jman : JobManager,
                             stage_out: Tuple[str,str] | None = None
                             ):
     """
+    Insert a "standard" Hadrons workflow into the job manager: For each configuration in state.gauge 
+    1) (If configs are not stored locally to the compute resource) Stage in the configuration
+    2) Execute the measurement job
+    3) (Optional) Copy the results to another machine (use stage_out)
+
     stage_out : If not None, provide a tuple containing the destination Globus endpoint and a path. Files will be placed in subdirectories of that path labeled by the job index
     """
     
