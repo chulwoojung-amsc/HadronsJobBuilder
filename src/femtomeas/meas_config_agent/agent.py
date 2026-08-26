@@ -105,14 +105,6 @@ def listGroupHandles()->List[Tuple[str,str] ] | None:
 def subWorkflowAgent(llm_model, checkpoint_state: Tuple[bool, str] = (False, "")  ):    
     do_checkpoint, checkpoint_file = checkpoint_state
 
-
-    def enactor(f, a): 
-        ret = f(*a)
-        if do_checkpoint:
-            state, _ = getCurrentState()
-            checkpointState(state, checkpoint_file)
-        return ret
-
     additional_sys_prompt_content = """
 ---------
 Group names
@@ -142,8 +134,16 @@ The following group names are reserved and cannot be used: f{reserved_names}
 
     tools=[listGroupHandles]
 
-    routingAgent(llm_model, "meas_config_agent", role_header=role_header, user_query_rules=user_query_rules, code_rules=code_rules, additional_sys_prompt_content=additional_sys_prompt_content, tools=tools, node_enactor=enactor)
+    graph = routingAgent(llm_model, "meas_config_agent", role_header=role_header, user_query_rules=user_query_rules, code_rules=code_rules, additional_sys_prompt_content=additional_sys_prompt_content, tools=tools, node_enactor=enactor)
 
+    def enactor(f, a): 
+        ret = f(*a)
+        if do_checkpoint:
+            state, _ = getCurrentState()
+            checkpointState(state, checkpoint_file)
+        return ret
+    
+    graph.eval(enactor=enactor)
 
 def measConfigAgent(llm_model, 
                     input_state : State | None =None, 

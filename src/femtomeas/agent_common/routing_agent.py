@@ -4,6 +4,7 @@ from .agent_base import promptStringList
 import asteval
 from langchain.messages import HumanMessage
 from .common import queryYesNo, prettyPrintPydantic, prettyPrintPythonCode, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput, InputMulti as AgentInputMulti    
+from femtomeas.agent_common.callgraph import Graph
 from .agent_base import parameterAgent
 
 class AgentOutput(BaseModel):
@@ -12,8 +13,9 @@ class AgentOutput(BaseModel):
 def routingAgent(llm_model, registry_name :  str, role_header : str | None = None,
                  user_query_rules : list[str] = [], code_rules : list[str] = [],
                  additional_sys_prompt_content = "",
-                 tools=[],
-                 node_enactor=lambda func, args: func(*args) ):
+                 tools=[],                 
+                 extra_symbols : dict | None = None  #pass extra symbols to put in asteval's symbol table
+                   )->Graph:
     manifest = getWorkflowCallables(registry_name).workflowFunctionManifest()
 
     print("MANIFEST\n", manifest)
@@ -61,17 +63,18 @@ Tool usage
 """
 
     user_query_rules = [
-    "If there are optional steps, you MUST ask the user if they want to perform those steps; NEVER make assumptions."] + user_query_rules
+    "If there are optional steps, you MUST ask the user if they want to perform those steps; NEVER make assumptions.",
+    "If a function call argument requires a string or other value, you MUST ask the user to provide this argument; never guess it."] + user_query_rules
 
     def printCode(obj):
         return prettyPrintPydantic(obj.code)
 
-    graphs = None
+    leaves = None
     
     def validator(obj):        
         reg_dict = getWorkflowCallables(registry_name).workflowFunctionSymtable()
-
-        symtable_in = asteval.make_symbol_table(use_numpy=False, **reg_dict)
+        extra = {} if extra_symbols is None else extra_symbols
+        symtable_in = asteval.make_symbol_table(use_numpy=False, **reg_dict, **extra)
         aeval = asteval.Interpreter(symtable=symtable_in)        
         aeval(obj.code)
 
@@ -95,15 +98,11 @@ Tool usage
                 print("RESULTS ELEMENT NOT ROUTINGHANDLE")
                 return False, HumanMessage("Your 'results' output array must contain only handles")
 
-        nonlocal graphs
-        graphs = [ h.parent_node for h in aeval.symtable['results'] ]
+        nonlocal leaves
+        leaves = [ h.parent_node for h in aeval.symtable['results'] ]
         return True, ""
 
     obj = parameterAgent(llm_model, AgentOutput, role, tools=tools, additional_user_query_rules=user_query_rules, human_validation_output_formatter=printCode, validator=validator)
 
-    assert graphs is not None
-    cache={}
-    #Evaluate all output handles with caching in case they are branches from the same chain
-
-    for g in graphs:
-        g.evalWithCache(cache, enactor=node_enactor)
+    assert leaves is not None
+    return Graph(leaves)

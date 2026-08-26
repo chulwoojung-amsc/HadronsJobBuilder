@@ -18,7 +18,9 @@ class Node:
         self.name = name
         self.func = func
         self.node_info = node_info
-        self.input_deps = [self.getNode(i) for i in input_deps if i is not None ] if input_deps is not None else None #makes it easier to deal with optional input deps
+        self.input_deps = None
+        if input_deps is not None:
+            self.input_deps = [self.getNode(i) if i is not None else None for i in input_deps ]            
 
     def info(self):
         return (self.name, self.node_info, self.func.__name__,signature(self.func), getdoc(self.func) )
@@ -27,7 +29,8 @@ class Node:
         functions.append(self.info())
         if self.input_deps is not None:
             for n in self.input_deps:
-                n._gatherInfo(functions)
+                if n is not None:
+                    n._gatherInfo(functions)
 
     def gatherInfo(self):
         functions = []
@@ -38,7 +41,8 @@ class Node:
         tree.append(self)
         if self.input_deps is not None:
             for n in self.input_deps:
-                n._gatherTree(tree)
+                if n is not None:
+                    n._gatherTree(tree)
 
     def gatherTree(self):
         """Return all nodes in the tree"""
@@ -52,8 +56,8 @@ class Node:
 
         args = []
         if self.input_deps is not None:
-            for n in self.input_deps:
-                args.append(n.evalWithCache(cache, enactor))
+            for n in self.input_deps:                
+                args.append(n.evalWithCache(cache, enactor) if n is not None else None)
         val = enactor(self.func, args)
         cache[self.name] = val
         return val
@@ -117,7 +121,7 @@ class Node:
             return True
         if self.input_deps is not None:
             for n in self.input_deps:
-                if n.isNodeInLineage(which):
+                if n is not None and n.isNodeInLineage(which):
                     return True
         return False
 
@@ -126,7 +130,8 @@ class Node:
             chain.append(self)
             if self.input_deps is not None:
                 for n in self.input_deps:
-                    n._depChain(chain,to)
+                    if n is not None:
+                        n._depChain(chain,to)
 
     def depChain(self, to: Self):
         """Find the dependency chain spanning from 'to' to 'this'"""
@@ -158,3 +163,21 @@ class Node:
                 if np is not None:
                     return np
         return None
+
+
+class Graph:
+    """A collection of nodes with connected edges, possibly disjoint"""
+
+    def __init__(self, leaves: list[Node]):
+        """leaves: The leaf nodes of the graphs"""
+        self.leaves = [ Node.getNode(l) for l in leaves ]
+
+    def evalWithCache(self, cache, enactor : Callable = lambda f, a: f(*a) ):
+        ret = []
+        for n in self.leaves:
+            ret.append( n.evalWithCache(cache, enactor=enactor) )
+        return ret
+
+    def eval(self, enactor : Callable = lambda f, a: f(*a)):
+        cache = {}
+        return self.evalWithCache(cache, enactor)

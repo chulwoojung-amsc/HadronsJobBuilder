@@ -18,7 +18,8 @@ dependencies = [
   "fastapi",
   "uvicorn",
   "websockets",
-  "asteval"
+  "asteval",
+  "bidict"
 ]
 
 [tool.setuptools]

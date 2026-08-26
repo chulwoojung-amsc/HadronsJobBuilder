@@ -110,6 +110,7 @@ def questionAndAnswerRulesMultiQ(additional_user_query_rules: list[str] = []):
     - Each question should only be about a single parameter. Ask a separate question for each parameter.
     - Prefer to ask multiple questions at once rather than one at a time, apart from when asking the user to choose between multiple types.
     - When asking the user to choose between multiple types, list only the types and not their parameters.
+    - Do not ask follow-ups to a previous question within the same group of questions; wait until the user responds before asking the next question.
     - If you ask a question where the user is asked to choose between a set of known options, first obtain the list of options (calling any appropriate tools) then list those options alongside the question in your response. If there are more than 6 choices, list only the first 6 and indicate that there are more options.
     - If the user responds to a query with an invalid response, your response should explain that the choice is invalid and ask the question again. Never ask a question about the next field without a valid response to the current field.
     - If the user asks you a question about a parameter:
