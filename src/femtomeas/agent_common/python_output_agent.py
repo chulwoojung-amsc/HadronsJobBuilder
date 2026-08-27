@@ -14,7 +14,7 @@ from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from langchain.agents import create_agent
 from langchain.agents.middleware import before_model, after_model, AgentState, dynamic_prompt, ModelRequest
 import json
-from .common import queryYesNo, prettyPrintPydantic, prettyPrintPythonCode, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput
+from .common import queryYesNo, prettyPrintPydantic, prettyPrintPythonCode, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput, reportAgentError
 from langchain.tools import tool
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.runtime import Runtime
@@ -269,20 +269,27 @@ Current code for generating {output_type_name} params structs
         return prompt
     
     all_tools = tools.copy()
-    agent = create_agent(model=llm_model, tools=all_tools, middleware=[system_prompt], response_format=AgentOutput)
+    #ToolStrategy delivers the structured output as a tool call, so the request
+    #always carries >=1 tool even when all_tools is empty. Strict OpenAI servers
+    #(e.g. BNL's vLLM behind LiteLLM) reject a bare "tools": [] array; lenient ones
+    #(AmSC) accept it. Wrapping here keeps both backends working.
+    agent = create_agent(model=llm_model, tools=all_tools, middleware=[system_prompt], response_format=ToolStrategy(AgentOutput))
 
     user_interactions = input_messages.copy()
     accepted = False
     code = None
 
     print("AGENT START")
+    llm_errors = 0
     while(accepted == False):
         #Invoke the agent
         try:
             resp = agent.invoke({ "messages": user_interactions }, config=config)
             resp_struct = getStructuredResponse(resp, AgentOutput)
+            llm_errors = 0
         except Exception as e:
-            print("EXCEPTION",e)
+            llm_errors += 1
+            reportAgentError(e, llm_errors)   #visible to the user; aborts after the limit
             user_interactions.append(HumanMessage(f"Encountered an error: {e}"))
             continue
 
@@ -481,12 +488,15 @@ def parameterModelCall(llm_model, structured_output_model : BaseModel, output_li
     code = None
 
     print("PARAMETER MODEL CALL START")
+    llm_errors = 0
     while(accepted == False):
         #Invoke the agent
         try:
             resp_struct = callModelWithStructuredOutput(llm_model, sys, user_interactions, ParameterModelCallOutput)
+            llm_errors = 0
         except Exception as e:
-            print("EXCEPTION",e)
+            llm_errors += 1
+            reportAgentError(e, llm_errors)   #visible to the user; aborts after the limit
             user_interactions.append(HumanMessage(f"Encountered an error: {e}"))
             continue
 

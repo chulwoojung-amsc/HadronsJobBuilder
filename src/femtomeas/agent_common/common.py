@@ -60,6 +60,24 @@ def Input(query):
     return out
 
 
+MAX_AGENT_ERRORS = 5
+
+def reportAgentError(e, count, maximum=MAX_AGENT_ERRORS):
+    """Surface an LLM/agent error to the user via Print (so it is visible in the
+    chat output and any log stream) and abort after `maximum` consecutive
+    failures. Without this a persistent error - e.g. an endpoint rejecting the
+    request, like the empty-`tools` case on strict OpenAI servers - is caught and
+    retried forever, which looks to the user like a silent hang.
+
+    Call inside an agent loop's `except` with a per-loop consecutive-error count;
+    reset that count to 0 after a successful model call. Raises to abort when the
+    limit is reached."""
+    Print(f"\n[LLM/agent error {count}/{maximum}] {e}\n")
+    if count >= maximum:
+        raise Exception(f"Aborting after {maximum} consecutive LLM/agent errors. "
+                        f"Last error:\n{e}")
+
+
 def prettyPrintPydantic(instance)->str:
     global output_style
     if output_style == "plain":

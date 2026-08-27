@@ -15,7 +15,7 @@ import os
 import sys
 import pexpect
 
-CKPT = "/tmp/claude-1003/-home-chulwoo-Claude/ef17f224-10f1-4020-9652-c59e42d957c5/scratchpad/smoke_fit_ckpt.json"
+CKPT = "/tmp/smoke_fit_ckpt.json"
 
 #A fresh (nonexistent) checkpoint path -> fitAgent starts clean and writes its
 #checkpoint there instead of polluting the repo cwd.
@@ -54,10 +54,13 @@ RULES = [
     (["alternating"], "0"),
     (["normal exponential", "number of exponential", "how many exponential", "nmass"], "2"),
     (["backend"], "analytic"),
+    (["circular", "wrap-around", "wrap‑around", "wraparound"], "false"),
     (["outer bootstrap", "nboots_outer", "outer resampling samples", "number of outer"], "20"),
     (["outer resample", "error estimation"], "bootstrap"),
     (["inner resample", "covariance estimation"], "jackknife"),
     (["shrinkage", "ledoit", "lw"], "1.0"),
+    (["random seed", "rng_seed", "seed"], "use the default"),
+    (["block size", "block_size", "block length"], "use the default"),
     (["data vector", "cov_on", "log-ratio", "raw correlator"], "corr"),
     (["differential evolution", "de refinement", "de_refinement", "refine"], "no"),
     (["tmin tuning", "tmin_tuning", "tuning"], "none"),
@@ -68,11 +71,28 @@ RULES = [
 DEFAULT_ANSWER = "Use the default value."
 
 
-def answer_for(question_lines):
-    window = " ".join(question_lines[-3:]).lower()
+def question_lines(before):
+    """The real question shown to the user, with the agent's debug dump removed.
+
+    parameterAgent prints  `OUTPUT <AgentOutput repr incl. params_struct=...> done=...`
+    and only then the actual prompt via input(). Keywords inside the echoed
+    params_struct JSON (e.g. `"Nboots_outer": 20`) would otherwise collide with the
+    rules, so drop everything up to and including the last debug-dump line and keep
+    only what follows - the question itself."""
+    lines = (before or "").splitlines()
+    cut = 0
+    for i, l in enumerate(lines):
+        s = l.lstrip()
+        if s.startswith("OUTPUT ") or "params_struct=" in l or "done=True" in l or "done=False" in l:
+            cut = i + 1
+    return [l.strip() for l in lines[cut:] if l.strip()]
+
+
+def answer_for(qlines):
+    window = " ".join(qlines[-3:]).lower()
     if any(c in window for c in YESNO_CUES):
         return "y"
-    last = question_lines[-1].lower() if question_lines else ""
+    last = qlines[-1].lower() if qlines else ""
     for scope in (last, window):
         for keys, ans in RULES:
             if any(k in scope for k in keys):
@@ -107,9 +127,9 @@ def main():
             child.terminate(force=True)
             sys.exit(2)
 
-        lines = [l.strip() for l in (child.before or "").splitlines() if l.strip()]
-        question = " | ".join(lines[-3:])
-        ans = answer_for(lines)
+        qlines = question_lines(child.before)
+        question = " | ".join(qlines[-3:])
+        ans = answer_for(qlines)
 
         #Loop guard: if the same (question, answer) recurs, escalate to full info
         #once, then bail rather than spin forever.
