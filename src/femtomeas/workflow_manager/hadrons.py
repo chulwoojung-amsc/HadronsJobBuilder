@@ -1,7 +1,7 @@
 import os
 import tempfile
 from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
-from .api_general import *
+from .api_general import uploadSmallFile, remoteMkdir, executeBatchJobCompat
 from typing import Literal, Union, List, Optional, Tuple
 from . import globals
 from .utils import checkSafePath
@@ -17,36 +17,39 @@ def setHadronsInfo(hadrons_info_ : dict):
                                                  "env" (optional) : "Command line instructions to set up environment, e.g.  module load hadrons" }
                                                }
     """
-    for m in hadrons_info_.keys():
-        if m not in globals.remote_workdir:
+    for m in hadrons_info_.keys():        
+        if m.lower() not in globals.remote_workdir:
             raise Exception("Invalid machine name")
         if "bin" not in hadrons_info_[m]:
             raise Exception("Bin dir must be provided")
         if "env" not in hadrons_info_[m]:
             hadrons_info_[m]["env"] = ""
     global hadrons_info
-    hadrons_info = hadrons_info_
+    hadrons_info = { machine.lower(): value for machine,value in hadrons_info_.items() }
         
 
-def validateHadronsXML(machine: str, hadrons_xml_file : str) -> bool:
-    if hadrons_info == None:
-        raise Exception("Must run setHadronsInfo")
-    if machine not in hadrons_info.keys():
-        raise Exception("Invalid machine")
+### Reenable if IRI ever allows execution on a login node
+# def validateHadronsXML(machine: str, hadrons_xml_file : str) -> bool:
+#     machine = machine.lower()
 
-    #create scratch dir in sandbox if not there already
-    scratch_dir = globals.remote_workdir[machine] + "/scratch"
-    remoteMkdirUnsafe(machine, scratch_dir)
+#     if hadrons_info == None:
+#         raise Exception("Must run setHadronsInfo")
+#     if machine not in hadrons_info.keys():
+#         raise Exception("Invalid machine")
+
+#     #create scratch dir in sandbox if not there already
+#     scratch_dir = globals.remote_workdir[machine] + "/scratch"
+#     remoteMkdir(machine, scratch_dir)
     
-    tmp_file = scratch_dir + "/hadrons_validate.xml"
-    uploadSmallFile(machine, tmp_file, hadrons_xml_file)
-    ret = remoteRun(machine,  f'{ hadrons_info[machine]["env"] }; { hadrons_info[machine]["bin"] }/HadronsXmlValidate { tmp_file }').strip().split('\n')
+#     tmp_file = scratch_dir + "/hadrons_validate.xml"
+#     uploadSmallFile(machine, tmp_file, hadrons_xml_file)
+#     ret = remoteRun(machine,  f'{ hadrons_info[machine]["env"] }; { hadrons_info[machine]["bin"] }/HadronsXmlValidate { tmp_file }').strip().split('\n')
 
-    if "Application valid" in ret[-1]:
-        return True
-    else:
-        print(ret)
-        return False
+#     if "Application valid" in ret[-1]:
+#         return True
+#     else:
+#         print(ret)
+#         return False
 
 def defaultRankGeom(ranks : int, grid : Tuple[int,int,int,int]):
     #rem = ranks
@@ -112,6 +115,8 @@ def submitHadronsJob(machine: str,
                      ranks = None,
                      delete_xml_after_upload = False
                      ):
+    machine = machine.lower()
+    
     if hadrons_info == None:
         raise Exception("Must run setHadronsInfo")
     if machine not in hadrons_info.keys():
@@ -141,7 +146,7 @@ def submitHadronsJob(machine: str,
     mpi_str = sizesToGridArgList(mpi)
 
     ###################################
-    if machine == "Perlmutter":
+    if machine == "perlmutter":
         if ranks < 4:
             bind="" #Entire node must be allocated for verbose,map_ldom
         else:

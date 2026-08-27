@@ -2,6 +2,7 @@ from . import globals
 import pathlib
 
 def checkSafePath(machine: str, path: str):
+    machine = machine.lower()
     if globals.remote_workdir == None:
         raise Exception("setupWorkflowAgent has not been called")
     if machine not in globals.remote_workdir:

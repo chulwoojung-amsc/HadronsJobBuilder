@@ -1,7 +1,7 @@
 from typing import Tuple
 from femtomeas.meas_config_agent.state import State
 from .manager import JobManager
-from .globus_transfer_action import TransferToAction, TransferFromAction
+from .globus_transfer_action import GlobusTransfer
 from .hadrons_compute_action import HadronsComputeAction, HadronsJobSpec
 from . import globals
 from .logging import wfmanLog
@@ -51,7 +51,7 @@ def enqueueStandardHadronsWorkflow(state : State, jman : JobManager,
         #If the configs are remote they will need to staged in
         override_cfgpath = None
         if source_uuid != None and configs[i] != None:
-            action = TransferToAction(source_endpoint=source_uuid, source_path=configs[i], machine=machine, dest_path=cfg_staging_dir)
+            action = GlobusTransfer(dest_endpoint=machine, dest_path=cfg_staging_dir, source_endpoint=source_uuid, source_path=configs[i])
             workflow.append(action)
             override_cfgpath = cfg_staging_dir
 
@@ -63,7 +63,7 @@ def enqueueStandardHadronsWorkflow(state : State, jman : JobManager,
             )
 
         if stage_out:
-            workflow.append(TransferFromAction(machine=machine, source_path=job_dir, dest_endpoint=stage_out[0], dest_path=stage_out[1])) 
+            workflow.append(GlobusTransfer(dest_endpoint=stage_out[0], dest_path=stage_out[1], source_endpoint=machine, source_path=job_dir)) 
             
             
         with jman as jd:

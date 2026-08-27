@@ -1,7 +1,7 @@
 from pathlib import Path
 import sqlite3
 from .actions_base import ActionClass, actionClass
-from .globus_transfer_action import DataTransfers
+from .globus_transfer_action import GlobusDataTransfers
 from .compute_action_manager import ComputeActions
 from .action_manager import ActionStatus, _ser, _unser
 from .logging import wfmanLog, updateGUI
@@ -18,7 +18,7 @@ class JobData:
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         
-        self.action_man = { ActionClass.TRANSFER : DataTransfers(self.conn),
+        self.action_man = { ActionClass.TRANSFER : GlobusDataTransfers(self.conn),
                             ActionClass.COMPUTE : ComputeActions(self.conn) }
 
         with self.conn as conn:        

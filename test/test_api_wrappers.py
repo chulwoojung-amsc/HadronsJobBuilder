@@ -129,7 +129,7 @@ if len(sys.argv) == 1:
 config = readManagerConfigFile(sys.argv[1])
 setupManager(config)
 
-machine = "Perlmutter"
+machine = "perlmutter"
 safe_dir = globals.remote_workdir[machine]
 print("Machine",machine, "is up?:", queryMachineStatus(machine))
 
@@ -226,33 +226,36 @@ if 0:
         time.sleep(10)
 
 if 0:
-    print(globusTransferStatus(machine, '61fc7889-4579-11f1-8b54-0ea3589134b3'))
-        
-if 1:
-    tid = globusCopyToMachine(machine, safe_dir + "/test_4_19", "dtn", "/global/cfs/cdirs/mp13/ckelly/globus_source_test_dir/test.dat")
+    #Test copy from my personal machine to BNL
+    local_uuid="d93351ad-a196-11f1-8d8b-0afff7074b21"
+    local_path="/C/Users/Chris Kelly/old_laptop_globus/test.txt"
+    scdf_uuid="12782fb1-a599-4f18-b0fb-2e849681e214"
+    sdcf_path="/sdcc/u/ckelly/"
+    tid = globusCopy(scdf_uuid, sdcf_path, local_uuid, local_path, allow_unsafe=False, block_until_complete=False)
     for i in range(10):
-        print(globusTransferStatus(machine, tid))
+        print(globusTransferStatus(tid))
         time.sleep(2)
+
 
 if 0:
-    tid = globusCopyFromMachine("dtn", "/global/cfs/cdirs/mp13/ckelly/globus_output_test_dir", machine, "/global/cfs/cdirs/mp13/ckelly/agent_safe_dir/test_4_19/test.dat")
+    print(globusTransferStatus('61fc7889-4579-11f1-8b54-0ea3589134b3'))
+        
+if 0:
+    tid = globusCopy(machine, safe_dir + "/test_4_19", "dtn", "/global/cfs/cdirs/mp13/ckelly/globus_source_test_dir/test.dat")
     for i in range(10):
-        print(globusTransferStatus(machine, tid))
+        print(globusTransferStatus(tid))
         time.sleep(2)
 
-
-        
+       
 if 0:
     #Test copying entire directories
-    tid = globusCopyToMachine(machine, safe_dir, "dtn", "/global/cfs/cdirs/mp13/ckelly/globus_source_test_dir/test_dir")
+    tid = globusCopy(machine, safe_dir, "dtn", "/global/cfs/cdirs/mp13/ckelly/globus_source_test_dir/test_dir")
     for i in range(10):
-        print(globusTransferStatus(machine, tid))
+        print(globusTransferStatus(tid))
         time.sleep(2)
-
-
         
 if 0:
-    globusCopyFromMachine("dtn", "/global/cfs/cdirs/mp13/ckelly/globus_source_test_dir/copyback",  machine, safe_dir + "/test.dat", block_until_complete=True)
+    globusCopy("dtn", "/global/cfs/cdirs/mp13/ckelly/globus_source_test_dir/copyback",  machine, safe_dir + "/test.dat", block_until_complete=True)
 
 if 0:
     result = downloadFile(machine, "/global/u2/c/ckelly/tocopy")

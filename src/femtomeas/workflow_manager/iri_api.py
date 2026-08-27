@@ -15,22 +15,30 @@ from globus_sdk.exc import GlobusAPIError
 from globus_sdk.scopes import TransferScopes
 from .utils import checkSafePath
 from .logging import wfapiLog, wfapiUserQuery
+from femtomeas.agent_common.common import queryYesNo
 
-known_machines = {  "Perlmutter" :
+known_machines = {  "perlmutter" :
                     { "iriapi_base" : "https://api.iri.nersc.gov/api/v1",
                       "iriapi_group" : "perlmutter",
-                      "iriapi_transfer_base" : "https://amsc-data-api.nersc.gov",
                       "globus_endpoint" : "6bdc7956-fc0f-4ad2-989c-7aa5ee643a79", 
                       "queues" : [ ("debug", "max time 0.5 hours, max nodes 8"), ("regular", "use for standard, production jobs or those too large for debug") ]
+                     },
+                     "amsc_transfer_server" :  #Universal server for AmSC data transfer API
+                     {
+                      "iriapi_transfer_base" : "https://amsc-data-api.nersc.gov"
                      }
+
                     }
 
 #These endpoints require special data access permissions
 #We also use this to bake in nicknames
 #TODO: figure out how to deal with those that also require a special domain
-special_globus_endpoints = { "dtn" :  "9d6d994a-6d04-11e5-ba46-22000b92c6ec", "perlmutter" : known_machines["Perlmutter"]["globus_endpoint"]  }
+#TODO: user config should store endpoints for which scopes are required, and token should be regenerated if list is changed (right now requires deletion)
+special_globus_endpoints = { "dtn" :  "9d6d994a-6d04-11e5-ba46-22000b92c6ec", "perlmutter" : known_machines["perlmutter"]["globus_endpoint"],
+                            "bnl": "12782fb1-a599-4f18-b0fb-2e849681e214"  }
 
 def replaceSpecialGlobusEndpoint(endpoint : str):
+    endpoint = endpoint.lower()
     if endpoint in special_globus_endpoints:
         return special_globus_endpoints[endpoint]
     else:
@@ -168,7 +176,7 @@ def interactive_login_transfer(client: globus_sdk.NativeAppAuthClient) -> dict:
     scope = globus_sdk.Scope(IRI_TRANSFER_DEFAULT_SCOPE)
     mapped_collections = [v for k,v in special_globus_endpoints.items()]
     
-    data_access = [globus_sdk.scopes.GCSCollectionScopes(mc).data_access for mc in mapped_collections]
+    data_access = [globus_sdk.scopes.GCSCollectionScopes(mc).data_access for mc in mapped_collections] #data access scope required for mapped collections
     transfer_scope = TransferScopes.all.with_dependencies(data_access)
     scope = scope.with_dependency(transfer_scope)
     print(f"Logging in with scope: {scope}")
@@ -232,12 +240,13 @@ def setupWorkflowAgent(iriapi_key_path : str, iriapi_transfer_key_path : str, wo
        iriapi_transfer_key_path: The full path to the IRI transfer API key file. This will be generated automatically if it doesn't currently exist.
        work_dir: The remote work directories, by machine as a dict, e.g. { "Perlmutter" : "/path/to/dir" }.  The agent is only allowed to modify the contents of files within this directory or its children
     """
-    globals.remote_workdir=work_dir
+    globals.remote_workdir={ machine.lower() : directory for machine, directory in work_dir.items() }
     setupIRIapiCompute(iriapi_key_path)
     setupIRIapiTransfer(iriapi_transfer_key_path)
         
 
 def get(machine, suburl, params = None, base='iriapi_base'):
+    machine = machine.lower()
     assert iri_api_client != None
     assert machine in known_machines
     assert base in known_machines[machine]
@@ -261,6 +270,7 @@ def getUserProjectIDmap(machine):
        dict name -> id
     """
     global iri_api_project_map
+    machine = machine.lower()
 
     if machine not in iri_api_project_map:
         j = get(machine, "account/projects")
@@ -280,17 +290,19 @@ def getMachineQueues(machine)->List[ Tuple[str,str] ]:
     
     Return: a list of string tuples, with the first tuple entry being the queue name and the second relevant information about the queue
     """
+    machine = machine.lower()
     if machine not in getKnownMachines():
         raise Exception(f"Invalid machine: {machine}")
 
     return known_machines[machine]["queues"]
 
 def getUserAccountProjects(machine):
+    machine = machine.lower()
     if machine not in getKnownMachines():
         raise Exception(f"Invalid machine: {machine}")
     
     out = list(getUserProjectIDmap(machine).keys())
-    if machine == "Perlmutter": #_g is required for GPU nodes
+    if machine == "perlmutter": #_g is required for GPU nodes
         for i in range(len(out)):
             out[i] += "_g"
     return out
@@ -305,6 +317,7 @@ def getResourceID(machine, rtype="compute"):
     Get the resource ID associated with the resource
     rtype: "compute" or "login"
     """
+    machine = machine.lower()
     global iri_api_resource_map
     if rtype not in ["compute","login"]:
         raise Exception("Invalid resource type")
@@ -349,6 +362,7 @@ def queryMachineStatus(machine: str, rtype="compute")-> bool:
     Return:
        A bool indicating whether the machine up (True) or down (False)
     """
+    machine = machine.lower()
     rid = getResourceID(machine, rtype)
     j = get(machine, f"status/resources/{rid}")
     wfapiLog(f"Query status of machine {machine} returned {j['current_status']}")
@@ -356,6 +370,7 @@ def queryMachineStatus(machine: str, rtype="compute")-> bool:
     
 
 def waitTask(machine, task_id, poll_freq=4):
+    machine = machine.lower()
     j = get(machine, f"task/{task_id}")
     
     while(j['status'] == "active"):
@@ -378,6 +393,7 @@ def remoteLs(machine: str, path: str)-> List[str]:
 
     TODO: Explore behavior of trailing slashes, and the fact that the directory name itself seems to be listed among the directory content; should we unify the behavior with SFAPI?
     """
+    machine = machine.lower()
     assert iri_api_client != None
     assert machine in known_machines
 
@@ -394,6 +410,7 @@ def remoteLs(machine: str, path: str)-> List[str]:
 
 
 def put(machine, suburl, data = None, params=None):
+    machine = machine.lower()
     assert iri_api_client != None
     assert machine in known_machines
     assert 'iriapi_base' in tokens
@@ -408,6 +425,7 @@ def put(machine, suburl, data = None, params=None):
 
 
 def remoteChmod(machine: str, path : str, mode : str, allow_unsafe = False) -> bool:
+    machine = machine.lower()
     wfapiLog(f"Changing permissions of file {machine}:{path} to {mode}")
     
     if not allow_unsafe and not checkSafePath(machine, path):
@@ -429,6 +447,7 @@ def remoteChmod(machine: str, path : str, mode : str, allow_unsafe = False) -> b
     
 
 def post(machine, suburl, data = None, params=None, files=None, base='iriapi_base', data_is_json=True):
+    machine = machine.lower()
     assert iri_api_client != None
     assert machine in known_machines
     assert base in known_machines[machine]
@@ -450,6 +469,8 @@ def remoteMkdir(machine: str, path: str, create_parents = True, allow_unsafe = F
 
     TODO: Doesn't seem to be a way to check if the directory already existed; save doing and waiting on an ls, for now we just always return 1 if success
     """
+    machine = machine.lower()
+
     wfapiLog(f"Creating directory {machine}:{path}")
     
     if not allow_unsafe and not checkSafePath(machine, path):
@@ -484,6 +505,8 @@ def uploadBytes(machine: str, remote_path: str, content: io.BytesIO, allow_unsaf
     Return:
        True if successful, False otherwise
     """
+    machine = machine.lower()
+
     wfapiLog(f"Uploading binary data to {machine}:{remote_path}")
     
     if not allow_unsafe and not checkSafePath(machine, remote_path):
@@ -512,6 +535,8 @@ def downloadFile(machine: str, remote_path: str)->str:
        machine - The name of the machine. Valid values are 'Perlmutter'
        remote_path - The absolute path on the remote machine
     """
+    machine = machine.lower()
+
     wfapiLog(f"Downloading file {machine}:{remote_path}")
        
     if not pathlib.Path(remote_path).is_absolute():
@@ -543,6 +568,7 @@ def executeBatchJobCompat(machine: str, script_body: str,
 
     time: the job duration. Currently it seems to only accept integers, which my testing indicates is in *seconds*
     """
+    machine = machine.lower()
 
     wfapiLog(f"Executing batch job on machine {machine} with nodes:{nodes}, ranks/node:{ranks_per_node}, gpus/rank:{gpus_per_rank}, time:{time}, queue:{queue}, account:{account}")
     
@@ -587,6 +613,8 @@ def executeBatchJobCompat(machine: str, script_body: str,
     
 
 def executeBatchJobTest(machine: str, job_run_dir):
+    machine = machine.lower()
+
     spec = {
         "name": "iri-sample-job",
         "executable": "/bin/hostname",
@@ -622,6 +650,8 @@ def executeBatchJobTest(machine: str, job_run_dir):
     print(json.dumps(j,indent=2))
 
 def getJobState(machine: str, jobid: str) -> str:
+    machine = machine.lower()
+
     rid = getResourceID(machine, rtype="compute")
     j = get(machine, f"compute/status/{rid}/{jobid}", params = { "historical" : True })
     wfapiLog(f"Queried job state {machine}:{jobid}, got {j['status']['state']}")
@@ -629,6 +659,8 @@ def getJobState(machine: str, jobid: str) -> str:
     
     
 def delete(machine, suburl, params = None):
+    machine = machine.lower()
+
     assert iri_api_client != None
     assert machine in known_machines
     assert 'iriapi_base' in tokens
@@ -639,6 +671,8 @@ def delete(machine, suburl, params = None):
     return {} if resp.text == "" else resp.json(), resp.status_code
 
 def cancelJob(machine: str, jobid: str):
+    machine = machine.lower()
+
     wfapiLog(f"Canceling job {machine}:{jobid}")
     rid = getResourceID(machine, rtype="compute")
     j, status = delete(machine, f"compute/cancel/{rid}/{jobid}")
@@ -646,30 +680,30 @@ def cancelJob(machine: str, jobid: str):
         raise Exception("Job cancellation failed:",json.dumps(j))
 
 
-def globusTransferStatus(machine, transfer_id)-> str:
+def globusTransferStatus(transfer_id)-> str:
     """
-    Query the status of a Globus transfer initiated from the API on the given machine, with the provided transfer_id
+    Query the status of a Globus transfer with the provided transfer_id
     Returns the status from the following (cf. https://docs.globus.org/api/transfer/task/):
     "ACTIVE"  The task is in progress.
     "INACTIVE" The task has been suspended and will not continue without intervention. Currently, only credential expiration will cause this state.
     "SUCCEEDED"  The task completed successfully.
     "FAILED"  The task or one of its subtasks failed, expired, or was canceled.
     """
-    j = get(machine, f"movement/transfer/globus/{transfer_id}", base='iriapi_transfer_base')
+    j = get("amsc_transfer_server", f"movement/transfer/globus/{transfer_id}", base='iriapi_transfer_base')
     return j["status"]
 
 
-def _globusCopy(source_endpoint, dest_endpoint, source_path, dest_path, machine, block_until_complete=False):
+def _globusCopy(source_endpoint, dest_endpoint, source_path, dest_path, block_until_complete=False):
     trans_args = { "source_uuid" : source_endpoint, "source_path": source_path,
                    "destination_uuid" : dest_endpoint, "destination_path" : dest_path,
                    "label" : "FemtoMeas transfer" }
     
-    j, status=post(machine, "movement/transfer/globus", data=trans_args, base='iriapi_transfer_base', data_is_json=True)
+    j, status=post("amsc_transfer_server", "movement/transfer/globus", data=trans_args, base='iriapi_transfer_base', data_is_json=True)
     if status == 200:
         tid = j["transfer_uuid"]
 
         if block_until_complete:
-            while (status := globusTransferStatus(machine, tid)) == "ACTIVE":
+            while (status := globusTransferStatus(tid)) == "ACTIVE":
                 print(".", end="")
                 time.sleep(20)
             print(status)
@@ -678,19 +712,40 @@ def _globusCopy(source_endpoint, dest_endpoint, source_path, dest_path, machine,
     else:
         raise Exception("Globus transfer failed, response content: " + json.dumps(j))
 
-    
-def globusCopyToMachine(machine: str, dest_path : str,
-                        source_endpoint: str, source_path : str,
-                        allow_unsafe=False,
-                        block_until_complete=False)-> str:
+def _checkSafePathTagOrUUID(machine_or_uuid: str, path: str)->bool:
+    #First check if machine_or_uuid is a machine in globals.remote_workdir
+    if machine_or_uuid in globals.remote_workdir.keys():
+        return checkSafePath(machine_or_uuid, path)
+
+    #See if machine_or_uuid is a UUID corresponding to a named machine
+    machine=None
+    for m, uuid in special_globus_endpoints.items():
+        if uuid == machine_or_uuid:
+            machine = m
+            break
+
+    #If we have a remote_workdir assigned for this machine we can go ahead
+    if machine is not None and machine in globals.remote_workdir.keys():
+        return checkSafePath(machine, path)
+
+    #Otherwise we have to ask the user
+    query = f"Do you give permission to write to path {path} on UUID {machine_or_uuid}"
+    if machine is not None:
+        query += f" ({machine})"
+    return queryYesNo(query)
+
+def globusCopy(dest_uuid: str, dest_path: str,
+               source_uuid: str, source_path: str,
+               allow_unsafe=False,
+               block_until_complete=False)-> str: 
     """
-    Perform a Globus transfer to the machine
+    Perform a Globus transfer between two endpoints
     Args:
-       machine: The destination machine
+       dest_uuid: The destination UUID (or a known machine name/tag)
        dest_path: The destination path on that machine (directory)
-       source_endpoint: The name/tag of the Globus source endpoint
+       source_uuid: The source UUID (or a known machine name/tag)
        source_path : The path on that endpoint
-       allow_unsafe : Allow movement to paths outside of the sandbox
+       allow_unsafe : Allow movement to paths outside of the sandbox or user permissions
        block_until_complete : Poll the transfer status every 20s until the transfer is complete before returning
     Return:
        The transfer ID as a string
@@ -698,47 +753,22 @@ def globusCopyToMachine(machine: str, dest_path : str,
     Notes:
        If source_path is a filename, only that file will be copied. If it is a directory name only the contents of that directory will be copied, not the directory itself (even if there is no trailing /)
     """
-    wfapiLog(f"Initiating globus copy from {source_endpoint}:{source_path} to {machine}:{dest_path}")
+       
+    wfapiLog(f"Initiating globus copy from {source_uuid}:{source_path} to {dest_uuid}:{dest_path}")    
 
-    assert machine in known_machines
-    dest_endpoint = known_machines[machine]["globus_endpoint"]
-    source_endpoint = replaceSpecialGlobusEndpoint(source_endpoint)
-   
-    if not allow_unsafe and not checkSafePath(machine, dest_path):
-        raise Exception("Attempting to copy data to a location outside of the sandbox")
+    if not allow_unsafe and not _checkSafePathTagOrUUID(dest_uuid, dest_path):
+        raise Exception(f"Attempting to copy data to a disallowed location on {dest_uuid}")
 
-    return _globusCopy(source_endpoint, dest_endpoint, source_path, dest_path, machine, block_until_complete)
+    #Transform tags into actual endpoints
+    if dest_uuid in special_globus_endpoints:
+        wfapiLog(f"Destination tag {dest_uuid} replaced by UUID {special_globus_endpoints[dest_uuid]}")
+        dest_uuid = special_globus_endpoints[dest_uuid]
+    if source_uuid in special_globus_endpoints:
+        wfapiLog(f"Source tag {source_uuid} replaced by UUID {special_globus_endpoints[source_uuid]}")
+        source_uuid = special_globus_endpoints[source_uuid]        
 
-    
-def globusCopyFromMachine(dest_endpoint: str, dest_path : str,
-                          machine: str, source_path : str,                          
-                          allow_unsafe=False,
-                          block_until_complete=False)-> str:
-    """
-    Perform a Globus transfer from the machine
-    Args:
-       dest_endpoint: The name/tag of the Globus target endpoint
-       dest_path : The path on that endpoint (directory)
-       machine: The source machine
-       source_path: The source path on that machine
-       allow_unsafe : Allow movement from paths outside of the sandbox
-       block_until_complete : Poll the transfer status every 20s until the transfer is complete before returning
-    Return:
-       The transfer ID as a string
+    return _globusCopy(source_endpoint=source_uuid, dest_endpoint=dest_uuid, source_path=source_path, dest_path=dest_path, block_until_complete=block_until_complete)
 
-    Notes:
-       If source_path is a filename, only that file will be copied. If it is a directory name only the contents of that directory will be copied, not the directory itself (even if there is no trailing /)
-    """
-    wfapiLog(f"Initiating globus copy from {machine}:{source_path} to {dest_endpoint}:{dest_path} to ")
-
-    assert machine in known_machines
-    source_endpoint = known_machines[machine]["globus_endpoint"]
-    dest_endpoint = replaceSpecialGlobusEndpoint(dest_endpoint)
-    
-    if not allow_unsafe and not checkSafePath(machine, source_path):
-        raise Exception("Attempting to copy data from a location outside of the sandbox")
-
-    return _globusCopy(source_endpoint, dest_endpoint, source_path, dest_path, machine, block_until_complete)
 
 ### NOT YET SUPPORTED
 # def remoteRun(machine: str, args : str | List[str] ):

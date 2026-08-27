@@ -29,17 +29,14 @@ def _fakeGlobusCopy():
     
     return key
 
-def globusCopyFromMachine(dest_endpoint: str, dest_path : str,
-                          machine: str, source_path : str):
-    wfapiLog(f"Initiating globus copy from {machine}:{source_path} to {dest_endpoint}:{dest_path} to ")
+def globusCopy(dest_uuid: str, dest_path: str,
+               source_uuid: str, source_path: str,
+               allow_unsafe=False,
+               block_until_complete=False)-> str: 
+    wfapiLog(f"Initiating globus copy from {source_uuid}:{source_path} to {dest_uuid}:{dest_path} to ")
     return _fakeGlobusCopy()
-                    
-def globusCopyToMachine(machine: str, dest_path : str,
-                        source_endpoint: str, source_path : str):
-    wfapiLog(f"Initiating globus copy from {source_endpoint}:{source_path} to {machine}:{dest_path}")
-    return _fakeGlobusCopy()
-    
-def globusTransferStatus(machine, transfer_id):
+   
+def globusTransferStatus(transfer_id):
     if timemodule.time() >= transfers[transfer_id]:
         return "SUCCEEDED"
     else:
