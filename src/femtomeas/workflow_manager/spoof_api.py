@@ -8,8 +8,8 @@ from typing import Literal, Union, List, Optional, Tuple
 def listSpecialGlobusEndpoints():
     return ["fake_endpoint1","fake_endpoint2"]
 
-def setupWorkflowAgent(sfapi_key_path: str, iriapi_key_path : str, work_dir : dict):
-    globals.remote_workdir=work_dir
+def setupWorkflowAgent(iriapi_key_path : str, iriapi_transfer_key_path : str, work_dir : dict):
+    globals.remote_workdir={ machine.lower() : directory for machine, directory in work_dir.items() }
     wfapiLog("Using SPOOF api with workdir", globals.remote_workdir)
 
 tid = 0

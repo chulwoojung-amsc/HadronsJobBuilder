@@ -5,25 +5,20 @@ from .api_general import uploadSmallFile, remoteMkdir, executeBatchJobCompat
 from typing import Literal, Union, List, Optional, Tuple
 from . import globals
 from .utils import checkSafePath
+from .manager_config_models import HadronsConfig 
 
 hadrons_info = None
 
-def setHadronsInfo(hadrons_info_ : dict):
+def setHadronsInfo(hadrons_info_ : dict[str, HadronsConfig]):
     """
     Provide the information necessary to run Hadrons on a remote machine
-    Args:
-       hadrons_info_ : dict    machine_name -> {
-                                                 "bin" : "/path/to/hadrons/bin/dir",
-                                                 "env" (optional) : "Command line instructions to set up environment, e.g.  module load hadrons" }
-                                               }
     """
-    for m in hadrons_info_.keys():        
-        if m.lower() not in globals.remote_workdir:
-            raise Exception("Invalid machine name")
-        if "bin" not in hadrons_info_[m]:
-            raise Exception("Bin dir must be provided")
-        if "env" not in hadrons_info_[m]:
-            hadrons_info_[m]["env"] = ""
+    assert isinstance(hadrons_info_, dict)
+    for machine, conf in hadrons_info_.items():
+        assert isinstance(conf, HadronsConfig)
+        if machine.lower() not in globals.remote_workdir:
+            raise Exception(f"Invalid machine name: {machine}")
+    
     global hadrons_info
     hadrons_info = { machine.lower(): value for machine,value in hadrons_info_.items() }
         
@@ -104,13 +99,102 @@ def sizesToGridArgList(sizes : List[int]):
         out = out + f".{sizes[i]}"
     return out
 
+def generateScriptPerlmutter(job_run_dir : str,
+                     account : str,
+                     queue : str,
+                     time : str,
+                     ranks : int,
+                     mpi_str : str,
+                     grid_str : str):
+    machine="perlmutter"
+
+    if ranks < 4:
+        bind="" #Entire node must be allocated for verbose,map_ldom
+    else:
+        bind = "--cpu-bind=verbose,map_ldom:3,2,1,0"
+                
+    nodes = (ranks + 3) // 4
+    return f"""#!/bin/bash
+#SBATCH -q {queue}
+#SBATCH -C gpu
+#SBATCH -A {account}
+#SBATCH --ntasks-per-node=4
+#SBATCH --exclusive
+#SBATCH --gpus-per-task=1
+#SBATCH -N {nodes}
+#SBATCH -t {time}
+#SBATCH -o {job_run_dir}/run.log
+
+set -e
+now=$(date)        
+echo "Hadrons job started at ${{now}}"
+        
+BIND="{bind}"
+export MPICH_OFI_NIC_POLICY=GPU
+
+#Hadrons uses an SQLite database that has I/O failures on Lustre. We need to actually run in a temporary directory then move everything back        
+SCRATCH_DIR=${{SCRATCH}}/${{SLURM_JOB_ID}}
+mkdir -p ${{SCRATCH_DIR}}        
+cd ${{SCRATCH_DIR}}
+        
+cat <<EOF > wrap.sh
+#!/bin/bash
+export CUDA_VISIBLE_DEVICES=\\${{SLURM_LOCALID}}  
+echo "Rank \\${{SLURM_PROCID}}, local rank \\${{SLURM_LOCALID}} : visible devices \\${{CUDA_VISIBLE_DEVICES}}"
+cd ${{SCRATCH_DIR}}
+\\$*
+EOF
+        
+chmod u+x wrap.sh
+{ hadrons_info[machine].env }
+        
+srun -c 32 --gpu-bind=none ${{BIND}} -n {ranks} ./wrap.sh { hadrons_info[machine].bin }/HadronsXmlRun {job_run_dir}/run.xml --mpi {mpi_str} --grid {grid_str} --accelerator-threads 8 --shm 3072 --device-mem 15360 --threads 8 --log Iterative,Message,Error,Warning,Performance --comms-overlap --comms-concurrent --shm-mpi 1
+mv ${{SCRATCH_DIR}}/* {job_run_dir}/
+cd {job_run_dir}        
+rmdir ${{SCRATCH_DIR}}
+now=$(date)
+echo "Hadrons job completed at ${{now}}"
+    """
+
+
+def generateScriptLocalCudaMPICH(job_run_dir : str,                     
+                     ranks : int,
+                     mpi_str : str,
+                     grid_str : str):
+    machine="local"
+                
+    return f"""#!/bin/bash
+set -e
+now=$(date)        
+echo "Hadrons job started at ${{now}}"
+echo $0
+
+cat <<EOF > wrap.sh
+#!/bin/bash
+export CUDA_VISIBLE_DEVICES=\\${{MPI_LOCALRANKID}}  
+echo "Local rank \\${{MPI_LOCALRANKID}} : visible devices \\${{CUDA_VISIBLE_DEVICES}}"
+\\$*
+EOF
+        
+chmod u+x wrap.sh
+{ hadrons_info[machine].env }
+        
+mpirun -n {ranks} ./wrap.sh { hadrons_info[machine].bin }/HadronsXmlRun {job_run_dir}/run.xml --mpi {mpi_str} --grid {grid_str} --accelerator-threads 8 --shm 3072 --device-mem 15360 --threads 8 --log Iterative,Message,Error,Warning,Performance --comms-overlap --comms-concurrent --shm-mpi 1
+
+now=$(date)
+echo "Hadrons job completed at ${{now}}"
+"""
+
+
+
+
 def submitHadronsJob(machine: str,
                      hadrons_xml_file : str,
                      job_run_dir : str,
                      account : str,
                      queue : str,
                      time : str,
-                     grid : Tuple[int, int, int, int], 
+                     grid : Tuple[int, int, int, int], #lattice dimensions
                      mpi : Tuple[int, int, int, int] | None = None, 
                      ranks = None,
                      delete_xml_after_upload = False
@@ -147,53 +231,13 @@ def submitHadronsJob(machine: str,
 
     ###################################
     if machine == "perlmutter":
-        if ranks < 4:
-            bind="" #Entire node must be allocated for verbose,map_ldom
-        else:
-            bind = "--cpu-bind=verbose,map_ldom:3,2,1,0"
-            
+        script = generateScriptPerlmutter(job_run_dir=job_run_dir, account=account, queue=queue, time=time, ranks=ranks, mpi_str=mpi_str, grid_str=grid_str)
         nodes = (ranks + 3) // 4
-        script=f"""#!/bin/bash
-#SBATCH -q {queue}
-#SBATCH -C gpu
-#SBATCH -A {account}
-#SBATCH --ntasks-per-node=4
-#SBATCH --exclusive
-#SBATCH --gpus-per-task=1
-#SBATCH -N {nodes}
-#SBATCH -t {time}
-#SBATCH -o {job_run_dir}/run.log
-
-now=$(date)        
-echo "Hadrons job started at ${{now}}"
-        
-BIND="{bind}"
-export MPICH_OFI_NIC_POLICY=GPU
-
-#Hadrons uses an SQLite database that has I/O failures on Lustre. We need to actually run in a temporary directory then move everything back        
-SCRATCH_DIR=${{SCRATCH}}/${{SLURM_JOB_ID}}
-mkdir -p ${{SCRATCH_DIR}}        
-cd ${{SCRATCH_DIR}}
-        
-cat <<EOF > wrap.sh
-#!/bin/bash
-export CUDA_VISIBLE_DEVICES=\\${{SLURM_LOCALID}}  
-echo "Rank \\${{SLURM_PROCID}}, local rank \\${{SLURM_LOCALID}} : visible devices \\${{CUDA_VISIBLE_DEVICES}}"
-cd ${{SCRATCH_DIR}}
-\\$*
-EOF
-        
-chmod u+x wrap.sh
-{ hadrons_info[machine]["env"] }
-        
-srun -c 32 --gpu-bind=none ${{BIND}} -n {ranks} ./wrap.sh { hadrons_info[machine]["bin"] }/HadronsXmlRun {job_run_dir}/run.xml --mpi {mpi_str} --grid {grid_str} --accelerator-threads 8 --shm 3072 --device-mem 15360 --threads 8 --log Iterative,Message,Error,Warning,Performance --comms-overlap --comms-concurrent --shm-mpi 1
-mv ${{SCRATCH_DIR}}/* {job_run_dir}/
-cd {job_run_dir}        
-rmdir ${{SCRATCH_DIR}}
-now=$(date)
-echo "Hadrons job completed at ${{now}}"
-"""
-    #######################################
+    elif machine == "local":
+        script = generateScriptLocalCudaMPICH(job_run_dir=job_run_dir, ranks=ranks, mpi_str=mpi_str, grid_str=grid_str)
+        nodes = 1
+    else:
+        raise Exception(f"Hadrons script for machine {machine} not implemented")
         
     remote_script_path = f"{job_run_dir}/batch_script.sh"
     

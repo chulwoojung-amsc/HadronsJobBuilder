@@ -16,6 +16,7 @@ from globus_sdk.scopes import TransferScopes
 from .utils import checkSafePath
 from .logging import wfapiLog, wfapiUserQuery
 from femtomeas.agent_common.common import queryYesNo
+from . import local_api
 
 known_machines = {  "perlmutter" :
                     { "iriapi_base" : "https://api.iri.nersc.gov/api/v1",
@@ -424,7 +425,7 @@ def put(machine, suburl, data = None, params=None):
 
 
 
-def remoteChmod(machine: str, path : str, mode : str, allow_unsafe = False) -> bool:
+def remoteChmod(machine: str, path : str, mode : str, allow_unsafe = False):
     machine = machine.lower()
     wfapiLog(f"Changing permissions of file {machine}:{path} to {mode}")
     
@@ -439,11 +440,8 @@ def remoteChmod(machine: str, path : str, mode : str, allow_unsafe = False) -> b
     tid = j['task_id']
     j = waitTask(machine, tid)
     
-    if j["status"] == "completed":
-        return True
-    else:
-        wfapiLog("Permission change failed:",json.dumps(j,indent=2))
-        return False
+    if j["status"] != "completed":        
+        raise Exception(f"Permission change failed: {json.dumps(j,indent=2)}")        
     
 
 def post(machine, suburl, data = None, params=None, files=None, base='iriapi_base', data_is_json=True):
@@ -460,16 +458,16 @@ def post(machine, suburl, data = None, params=None, files=None, base='iriapi_bas
     resp = iri_api_client.post(base_path + '/' + suburl, headers=headers, json=data if data_is_json else None, data=data if not data_is_json else None, params=params, files=files, timeout=300 )
     return json.loads(resp.text), resp.status_code
     
-def remoteMkdir(machine: str, path: str, create_parents = True, allow_unsafe = False)-> int:
+def remoteMkdir(machine: str, path: str, create_parents = True, allow_unsafe = False):
     """
     Create a directory on the remote machine. This is an unsafe action as it is not confined to the sandbox directory, and thus should not be exposed as a tool without safeguards
     Args:
            allow_unsafe - Allow uploading to directories other than within the sandbox
-    Return: 0 if the operation failed, 1 if the directory was created, 2 if it already existed
-
-    TODO: Doesn't seem to be a way to check if the directory already existed; save doing and waiting on an ls, for now we just always return 1 if success
     """
     machine = machine.lower()
+    if machine == "local":
+        return local_api.localMkdir(path, create_parents, allow_unsafe)
+
 
     wfapiLog(f"Creating directory {machine}:{path}")
     
@@ -485,16 +483,11 @@ def remoteMkdir(machine: str, path: str, create_parents = True, allow_unsafe = F
     tid = j['task_id']
     j = waitTask(machine, tid)
 
-    if j["status"] == "completed":
-        return 1
-    #elif status == 304:  #This does not seem to work
-    #    return 2
-    else:
-        wfapiLog("Directory creation failed, status:", status, "response:", json.dumps(j,indent=2))
-        return 0
+    if j["status"] != "completed":
+        raise Exception(f"Directory creation failed, status: {status},  response: { json.dumps(j,indent=2) }")        
 
 
-def uploadBytes(machine: str, remote_path: str, content: io.BytesIO, allow_unsafe = False) -> bool:
+def uploadBytes(machine: str, remote_path: str, content: io.BytesIO, allow_unsafe = False):
     """
     Upload file contents as bytes to a remote path
     Args:
@@ -502,10 +495,10 @@ def uploadBytes(machine: str, remote_path: str, content: io.BytesIO, allow_unsaf
        remote_path - The absolute path on the remote machine
        content - The file contents as binary
        allow_unsafe - Allow uploading to directories other than within the sandbox
-    Return:
-       True if successful, False otherwise
     """
     machine = machine.lower()
+    if machine == "local":
+        return local_api.writeBytes(remote_path, content, allow_unsafe)
 
     wfapiLog(f"Uploading binary data to {machine}:{remote_path}")
     
@@ -521,11 +514,8 @@ def uploadBytes(machine: str, remote_path: str, content: io.BytesIO, allow_unsaf
     tid = j['task_id']
     j = waitTask(machine, tid)
 
-    if j["status"] == "completed":
-        return 1
-    else:
-        wfapiLog("Upload failed, status:", status, " response:", json.dumps(j,indent=2))
-        return 0
+    if j["status"] != "completed":
+        raise Exception(f"Upload failed, status: {status},  response: {json.dumps(j,indent=2)}")        
 
 
 def downloadFile(machine: str, remote_path: str)->str:
@@ -551,8 +541,7 @@ def downloadFile(machine: str, remote_path: str)->str:
     if j["status"] == "completed":
         return j["result"]["output"]
     else:
-        wfapiLog("Download failed, status:", status, " response:", json.dumps(j,indent=2))
-        return None
+        raise Exception(f"Download failed, status: {status}, response: { json.dumps(j,indent=2)}")        
 
 
     
@@ -569,6 +558,8 @@ def executeBatchJobCompat(machine: str, script_body: str,
     time: the job duration. Currently it seems to only accept integers, which my testing indicates is in *seconds*
     """
     machine = machine.lower()
+    if machine == "local":
+        return local_api.executeJobScript(script_body, job_run_dir, allow_unsafe)
 
     wfapiLog(f"Executing batch job on machine {machine} with nodes:{nodes}, ranks/node:{ranks_per_node}, gpus/rank:{gpus_per_rank}, time:{time}, queue:{queue}, account:{account}")
     
@@ -607,9 +598,8 @@ def executeBatchJobCompat(machine: str, script_body: str,
     j, status = post(machine, f"compute/job/{rid}", data=spec)
     if status == 200:
         return j['id']
-    else:
-        wfapiLog("Job submission failed, status:",status,"reason:", json.dumps(j,indent=2))
-        raise Exception("Job submission failed")
+    else:        
+        raise Exception(f"Job submission failed, status: {status}, reason: { json.dumps(j,indent=2)}")
     
 
 def executeBatchJobTest(machine: str, job_run_dir):
@@ -651,6 +641,8 @@ def executeBatchJobTest(machine: str, job_run_dir):
 
 def getJobState(machine: str, jobid: str) -> str:
     machine = machine.lower()
+    if machine == "local":
+        return local_api.getJobState(jobid)
 
     rid = getResourceID(machine, rtype="compute")
     j = get(machine, f"compute/status/{rid}/{jobid}", params = { "historical" : True })
