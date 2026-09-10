@@ -10,6 +10,7 @@ from langchain.messages import (
 
 import json
 import io
+import os
 import re
 
 from .print_pydantic_markdown import pydantic_to_markdown
@@ -50,6 +51,24 @@ def Print(*args, **kwargs):
 
     print_func(*args, *kwargs)
         
+#Output verbosity: 0=quiet (user I/O only), 1=normal (default), 2=debug (per-turn
+#struct dumps, manifests, registry chatter). Seed from the environment so it can
+#be set before imports run (registry prints fire at import time); the CLIs also
+#expose --verbose/--quiet which call setVerbosity() at runtime.
+verbosity = int(os.environ.get("FEMTOMEAS_VERBOSITY", "1"))
+
+def setVerbosity(v):
+    global verbosity
+    verbosity = int(v)
+
+def debugPrint(*args, level=2, **kwargs):
+    """Print only when the current verbosity is at least `level`. Use for the noisy
+    diagnostic output (OUTPUT dumps, MANIFEST, registry registration, yes/no
+    tracing) so normal runs stay readable."""
+    if verbosity >= level:
+        print(*args, **kwargs)
+
+
 def Input(query):
     global input_func, log_stream
     out = input_func(query)
@@ -83,6 +102,24 @@ def InputMulti(queries, preamble=None)->list[str]:
                 print("\n#########################\nAI:\n %s" % q, file=log_stream)
                 print("\n#########################\nHuman:\n %s" % out[-1], file=log_stream, flush=True)
     return out
+
+MAX_AGENT_ERRORS = 5
+
+def reportAgentError(e, count, maximum=MAX_AGENT_ERRORS):
+    """Surface an LLM/agent error to the user via Print (so it is visible in the
+    chat output and any log stream) and abort after `maximum` consecutive
+    failures. Without this a persistent error - e.g. an endpoint rejecting the
+    request, like the empty-`tools` case on strict OpenAI servers - is caught and
+    retried forever, which looks to the user like a silent hang.
+
+    Call inside an agent loop's `except` with a per-loop consecutive-error count;
+    reset that count to 0 after a successful model call. Raises to abort when the
+    limit is reached."""
+    Print(f"\n[LLM/agent error {count}/{maximum}] {e}\n")
+    if count >= maximum:
+        raise Exception(f"Aborting after {maximum} consecutive LLM/agent errors. "
+                        f"Last error:\n{e}")
+
 
 def prettyPrintPydantic(instance)->str:
     global output_style
@@ -138,9 +175,9 @@ def queryYesNo(query: str, body="")->bool:
             result = Input(query + " [y/n]" + body)
         else:        
             result = Input(f"You must answer with either 'y' or 'n'. {query}{body}")
-        print("QUERY YES/NO RECEIVED",result,"VALID ?", result in ["y","n"] )
+        debugPrint("QUERY YES/NO RECEIVED",result,"VALID ?", result in ["y","n"] )
 
-    print("QUERY YES/NO GOT VALID RESPONSE")
+    debugPrint("QUERY YES/NO GOT VALID RESPONSE")
     return True if result == "y" else False
         
 

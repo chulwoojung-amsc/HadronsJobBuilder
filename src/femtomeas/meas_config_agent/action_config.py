@@ -25,9 +25,12 @@ The rules for identifying the required action instances are:
         "ActionConfig.action: Insert the action type (e.g. DWF, WilsonClover) associated with the instance",
         
         """ActionConfig.name:
-  - You must assign a unique tag/name to the instance via the ActionConfig.name field. Do not ask the user to specify a tag.     
+  - You must assign a unique tag/name to the instance via the ActionConfig.name field. Do not ask the user to specify a tag.
   - Never use the same tag for different instances.
   - The tag should include the action name and enough of the parameter values to uniquely distinguish it among the other action instances, prefering shorter tags if possible.""",
+
+        """ActionConfig.precision: The floating-point precision of the action, either "Double" or "Single". You MUST ask the user which precision they want (suggest "Double" as the default); never silently assume it.
+  - IMPORTANT: a mixed-precision solver (MixedPrecisionRBPrecCG) needs BOTH a Double-precision action AND a matching Single-precision action (same action type and parameters, e.g. same mass/Ls/M5). If the user says they intend to use a mixed-precision solver, tell them this and create TWO action instances - one with precision "Double" and one with precision "Single" - sharing the same parameters but with distinct names. Do not create only a Double-precision action in that case.""",
         ]
     
     user_info_rules = """Use an empty string""" 

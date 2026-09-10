@@ -65,9 +65,18 @@ def parse_args():
 
     parser.add_argument(
         "--write-xml-generator",
-        nargs=1,   
+        nargs=1,
         metavar="FILENAME",
         help="Write Python code that generates the measurement config in Hadrons XML format"
+    )
+
+    parser.add_argument(
+        "--verbose", action="store_true",
+        help="Show diagnostic output (per-turn struct dumps, manifests, registry chatter)"
+    )
+    parser.add_argument(
+        "--quiet", action="store_true",
+        help="Suppress all but the essential conversation I/O"
     )
 
     return parser.parse_args()
@@ -76,41 +85,48 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
+    from femtomeas.agent_common.common import setVerbosity
+    setVerbosity(2 if args.verbose else 0 if args.quiet else 1)
+
     config = readManagerConfigFile(args.config_file)
 
-    local_llm = ChatOpenAI(
-        model="gpt-oss-120b-GGUF",
-        openai_api_key="sk-local",
-        openai_api_base="http://localhost:8000/v1",
-        temperature=0
-    )
+    #LLM endpoint is environment-switchable so setup.sh / setup-BNL.sh can point the
+    #agent at different backends (AmSC, BNL, a local server, ...). Defaults reproduce
+    #the AmSC I2 endpoint, so unset vars keep the previous behaviour.
+    #  FEMTOMEAS_LLM_MODEL     model name
+    #  FEMTOMEAS_LLM_BASE_URL  OpenAI-compatible base URL (the root the client appends
+    #                          to; the AmSC value has no trailing /v1)
+    #  FEMTOMEAS_LLM_API_KEY   raw API key; falls back to the manager config's i2 key
+    llm_model    = os.environ.get("FEMTOMEAS_LLM_MODEL", "gpt-oss-120b")
+    llm_base_url = os.environ.get("FEMTOMEAS_LLM_BASE_URL", "https://api.i2-core.american-science-cloud.org/")
+    llm_api_key  = os.environ.get("FEMTOMEAS_LLM_API_KEY") or readI2APIkey(config.agent.i2api_key_path)
 
-    amsc_llm_0t = ChatOpenAI(
-        model="gpt-oss-120b",
-        base_url="https://api.i2-core.american-science-cloud.org/",
+    llm = ChatOpenAI(
+        model=llm_model,
+        base_url=llm_base_url,
         temperature=0,
-        api_key = readI2APIkey(config.agent.i2api_key_path)
+        api_key=llm_api_key,
     )
+    print(f"Agent LLM: model={llm_model} base_url={llm_base_url}")
 
+    #--- Superseded hardcoded LLM definitions, replaced by the env-driven block
+    #    above. Left commented for revival if a portion is needed. ---
     # nemotron = ChatNVIDIA(
     #     model="nemotron-super-3",
     #     base_url="https://api.i2-core.american-science-cloud.org/v1",
     #     temperature=0,
     #     api_key = readI2APIkey(config.agent.i2api_key_path)
     # )
+    # oss_20b = ChatOpenAI(
+    #     model="gpt-oss-20b",
+    #     base_url="https://api.i2-core.american-science-cloud.org/",
+    #     temperature=0,
+    #     api_key = readI2APIkey(config.agent.i2api_key_path)
+    # )
+    # llm = amsc_llm_0t
+    # #llm = nemotron
+    # #llm = oss_20b
 
-    oss_20b = ChatOpenAI(
-        model="gpt-oss-20b",
-        base_url="https://api.i2-core.american-science-cloud.org/",
-        temperature=0,
-        api_key = readI2APIkey(config.agent.i2api_key_path)
-    )
-
-    
-    llm = amsc_llm_0t
-    #llm = nemotron
-    #llm = oss_20b
-    
     #Always checkpoint, but overwrite input checkpoint file if reloading and continuing
     checkpoint_file = args.reload_checkpoint if args.reload_checkpoint is not None else "ckpoint_state.json" #NB: argparse default argument (const) is only used if the arg is specified but a value not provided, not when the arg is not specified
     reload_checkpoint = args.reload_checkpoint is not None and os.path.exists(checkpoint_file)

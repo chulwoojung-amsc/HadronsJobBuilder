@@ -43,7 +43,7 @@ class LanczosEigenSolver(BaseModel):
         cheby_valid, cheby_why = self.cheby.check(state)
         if not cheby_valid:
             return (False, cheby_why)
-        if not state.isValidAction(action_name):
+        if not state.isValidInstance(action_name, "actions"):
             return (False, "Provided action name is not among the list of actions in the state")
         if self.storeEvecs and self.fileStem == "":
             return (False, "If writing the eigenvectors, a valid file stem must be provided")

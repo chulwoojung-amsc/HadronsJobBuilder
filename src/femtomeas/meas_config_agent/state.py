@@ -35,7 +35,11 @@ class State(BaseModel):
     gauge: GaugeFieldConfig | None = Field(None,description="The gauge configuration parameters")
     
     def isValidInstance(self, name: str, instance_class : str):
-        assert instance_class in self.instances
+        #No instances of this class have been created (e.g. checking whether a
+        #propagator is a *smeared* propagator when none exist) -> it is not valid,
+        #rather than an assertion crash.
+        if instance_class not in self.instances:
+            return False
         r, e = executeCode(self.instances[instance_class])
         if len(e) > 0:
             raise Exception(f"Executing code gave the following exceptions: {e}")

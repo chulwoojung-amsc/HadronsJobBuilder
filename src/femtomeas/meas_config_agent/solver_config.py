@@ -18,20 +18,43 @@ def identifySolvers(model, group_name: str, action_group_name: str,  eigensolver
 
     use_evecs = eigensolver_group_name is not None
 
-    #Guesser
-    guesser_directions = ""
+    #Guesser. Note: an empty string "" is always a valid guesser and means "no
+    #guesser". Always explain this so the field is answerable even when no
+    #eigensolver group is associated with the solver.
+    guesser_directions = """
+- The RBPrecCG solver's 'guesser' field takes an eigenvector-based initial guess to
+  accelerate the solve. Using no guesser is allowed: to request that, set the
+  guesser to the empty string ""."""
 
     if use_evecs:
-        guesser_directions = f"""
-- Previously-computed eigenvectors can be used as guessers to accelerate the solver. The following eigensolver instances can be used as guessers for the solvers you create:   
+        guesser_directions += f"""
+  Alternatively, previously-computed eigenvectors can be used as guessers. The
+  following eigensolver instances are available for the solvers you create:
   {state.groups[eigensolver_group_name].code}
- 
-  Where the complete set of eigensolver instances is defined through the following Python code:
-  {state.instances["eigensolvers"]}
 
-  - A valid guesser must have the same action instance associated with the eigensolver instance as the solver does. For mixed precision solvers, check the action precision matches."""
+  (The complete set of eigensolver instances is defined by this Python code:
+  {state.instances["eigensolvers"]})
+
+  - A valid guesser is either the empty string "" (no guesser) or one of the
+    eigensolver instance names listed above. A named guesser must have the same
+    action instance as the solver; for mixed-precision solvers the action
+    precision must match."""
 
     ###############
+
+    #Mixed-precision guidance: the MixedPrecisionRBPrecCG solver needs a
+    #single-precision inner action in addition to the double-precision outer action.
+    action_precisions_code = state.instances["actions"]
+    mixed_precision_directions = f"""
+- If the user chooses the MixedPrecisionRBPrecCG solver, it needs TWO action instances:
+  the outer 'action' must be Double precision, and 'innerAction' must be a Single-precision
+  action with the same physical parameters (mass, Ls, M5, etc.). The inner solve runs in
+  single precision, the outer refinement in double.
+  - The available action instances and their precisions are defined by the code above.
+    If the user wants mixed precision but NO Single-precision action exists, you must tell
+    them that a mixed-precision solver requires a single-precision action instance, and that
+    they need to first create a Single-precision version of the action (same parameters,
+    precision Single) in the action group. Do not fabricate an innerAction that does not exist."""
 
 
     role = f"""identifying the lattice QCD solver instances required by user. Solvers invert the QCD Dirac operator for a particular action instance. A solver instance has a set of parameters such as stopping conditions and the maximum number of iterations. The instance also has an 'action' field, that must be set to the name of one of the action instances identified previously.
@@ -45,6 +68,7 @@ where the parameters of the actions are defined through the following Python cod
 - Ask for the solver type before asking about or mentioning the parameters of that solver. If there is only one supported solver you may assume this response and skip this question; however you must explain this to the user.
 
 {guesser_directions}
+{mixed_precision_directions}
 -----------------
 Solver instance rules
 -----------------
@@ -70,7 +94,14 @@ You must adhere to the following rules for generating solver instances:
   #name
       """SolverConfig.name: You must choose a unique tag/name to the solver instance. Assign this automatically, never ask the user (although they may choose to suggest names if they desire).
   - Never use the same tag for different instances.
-  - The tag should include the action name and enough of the parameter values to uniquely distinguish it among the other solver instances, prefering shorter tags if possible."""
+  - The tag should include the action name and enough of the parameter values to uniquely distinguish it among the other solver instances, prefering shorter tags if possible.""",
+
+  #guesser
+      """guesser fields (RBPrecCGsolver.guesser, and MixedPrecisionRBPrecCG's innerGuesser/outerGuesser): When you ask the user for any guesser, you MUST list the valid choices in your question so they know what to pick. The valid choices are:
+  - "no guesser" (recorded as an empty string ""), which is always available, AND
+  - any of the eigensolver instance names made available in the role instructions above (only if an eigensolver group is associated with this solver).
+  For the mixed-precision solver, innerGuesser must be a single-precision eigensolver or "" and outerGuesser must be a double-precision eigensolver or "".
+  If no eigensolver instances are available, tell the user that only "no guesser" is possible and record the empty string "" without making them guess. Never ask for a guesser without presenting these options, and never accept a value that is not one of the listed names or the empty string."""
       ]
 
     additional_user_query_rules = [        
@@ -95,7 +126,7 @@ You must adhere to the following rules for generating solver instances:
             if s.action not in used_actions:
                 return (False, f"Action {s.action} is not within the provided subset of actions associated with this group")
             if isinstance(s.solver_args, RBPrecCGsolver) and s.solver_args.guesser not in used_eigsol:
-                return (False, f"Action {s.guesser} is not within the provided subset of eigensolvers associated with this group")
+                return (False, f"Guesser {s.solver_args.guesser} is not within the provided subset of eigensolvers associated with this group")
             
         return (True, "")
     ###################################

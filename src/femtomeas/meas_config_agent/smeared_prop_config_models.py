@@ -36,6 +36,6 @@ class SmearedPropagatorConfig(BaseModel):
         self.smearing.setXML(self.name, self.input_prop,  xml)
 
     def check(self, state):
-        if not state.isValidPropagator(self.input_prop):
+        if not state.isValidInstance(self.input_prop, "propagators"):
             return (False, f"Input propagator {self.input_prop} does not exist")
         return self.smearing.check(state)

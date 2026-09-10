@@ -20,7 +20,7 @@ def getMesonGammas(op : mesonSpecialKeywords)-> List[Gammas]:
 
 def validateProps(prop_names, state):
     for p in prop_names:
-        if not state.isValidPropagator(p):
+        if not state.isValidInstance(p, "propagators"):
             return (False, f"-Propagator instance {p} does not exist")
     return (True,"")
 
@@ -74,10 +74,10 @@ class Meson2ptConfig(BaseModel):
 
 
     def checkProps(self, state):
-        lprop_exists = state.isValidPropagator(self.propagators[0])
-        rprop_exists = state.isValidPropagator(self.propagators[1])
-        lsprop_exists = state.isValidSmearedPropagator(self.propagators[0])
-        rsprop_exists = state.isValidSmearedPropagator(self.propagators[1])
+        lprop_exists = state.isValidInstance(self.propagators[0], "propagators")
+        rprop_exists = state.isValidInstance(self.propagators[1], "propagators")
+        lsprop_exists = state.isValidInstance(self.propagators[0], "smeared_propagators")
+        rsprop_exists = state.isValidInstance(self.propagators[1], "smeared_propagators")
 
         if not lprop_exists and not lsprop_exists:
             return (False, f"Propagator {self.propagators[0]} does not exist")

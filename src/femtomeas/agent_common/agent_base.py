@@ -10,7 +10,15 @@ from typing import Literal, Union, List, Optional, Tuple, Any
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentState, dynamic_prompt, ModelRequest
 import json
-from .common import queryYesNo, prettyPrintPydantic, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput, InputMulti as AgentInputMulti
+from .common import queryYesNo, prettyPrintPydantic, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput, InputMulti as AgentInputMulti, reportAgentError, debugPrint
+from langchain.agents.structured_output import ToolStrategy   #re-added: dropped in the refactor, needed for the ToolStrategy(...) wrap below
+#--- Pre-refactor imports no longer used by this module (moved out in the routing
+#    refactor). Left commented for revival if a portion is needed. ---
+# from .common import getUserInput, provideInformationToUser
+# from femtomeas.workflow_manager.api_general import getKnownMachines, getUserAccountProjects, getMachineQueues
+# from langchain.tools import tool
+# from langgraph.checkpoint.memory import MemorySaver
+# from langgraph.runtime import Runtime
 import re
 
 from typing import Callable
@@ -289,18 +297,27 @@ Current {output_type_name} params struct
         return prompt
     
     all_tools = tools.copy()
-    agent = create_agent(model=llm_model, tools=all_tools, middleware=[system_prompt], response_format=agent_output_type)
+    #ToolStrategy delivers the structured output as a tool call, so the request
+    #always carries >=1 tool even when all_tools is empty. Strict OpenAI servers
+    #(e.g. BNL's vLLM behind LiteLLM) reject a bare "tools": [] array; lenient ones
+    #(AmSC) accept it. Wrapping the refactor-parametrized output type keeps both
+    #backends working.
+    agent = create_agent(model=llm_model, tools=all_tools, middleware=[system_prompt], response_format=ToolStrategy(agent_output_type))
 
     user_interactions = input_messages.copy()
     accepted = False
     obj = None
+    llm_errors = 0
 
     while(accepted == False):
         #Invoke the agent
         try:
             resp = agent.invoke({ "messages": user_interactions }, config=config)
             resp_struct = getStructuredResponse(resp, agent_output_type)
+            llm_errors = 0
         except Exception as e:
+            llm_errors += 1
+            reportAgentError(e, llm_errors)   #visible to the user; aborts after the limit
             user_interactions.append(HumanMessage(f"Encountered an error: {e}"))
             continue
 
@@ -320,7 +337,7 @@ Current {output_type_name} params struct
             print("NO PARAMS_STRUCT IN RESPONSE")
             continue
 
-        print("OUTPUT", prettyPrintPydantic(resp_struct), "\n\n" )
+        debugPrint("OUTPUT", prettyPrintPydantic(resp_struct), "\n\n" )
 
         if resp_struct.done:
             try:
@@ -434,7 +451,7 @@ def parameterModelCall(llm_model, structured_output_model : BaseModel,
             user_interactions.append(HumanMessage(f"Encountered an error: {e}"))
             continue
 
-        print("OUTPUT", prettyPrintPydantic(obj), "\n\n" )
+        debugPrint("OUTPUT", prettyPrintPydantic(obj), "\n\n" )
 
             
         #Automatic validation

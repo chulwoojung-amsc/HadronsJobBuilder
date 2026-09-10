@@ -14,7 +14,7 @@ from langchain.agents.structured_output import ToolStrategy, ProviderStrategy
 from langchain.agents import create_agent
 from langchain.agents.middleware import before_model, after_model, AgentState, dynamic_prompt, ModelRequest
 import json
-from .common import queryYesNo, prettyPrintPydantic, prettyPrintPythonCode, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput, InputMulti as AgentInputMulti
+from .common import queryYesNo, prettyPrintPydantic, prettyPrintPythonCode, getStructuredResponse, callModelWithStructuredOutput, Print as AgentPrint, Input as AgentInput, InputMulti as AgentInputMulti, debugPrint, reportAgentError
 import re
 
 from typing import Callable
@@ -405,22 +405,29 @@ Current scratchpad contents
         return prompt
     
     all_tools = tools.copy()
-    agent = create_agent(model=llm_model, tools=all_tools, middleware=[system_prompt], response_format=agent_model_type)
+    #ToolStrategy wrap: the request always carries >=1 tool even when all_tools is
+    #empty, so strict servers (BNL vLLM/LiteLLM) don't reject a bare "tools": [].
+    agent = create_agent(model=llm_model, tools=all_tools, middleware=[system_prompt], response_format=ToolStrategy(agent_model_type))
 
     user_interactions = input_messages.copy()
     accepted = False
     new_instance_code = None
     use_instance_code = None
 
-    print("AGENT START")
+    debugPrint("AGENT START")
+    llm_errors = 0
     while(accepted == False):
         #Invoke the agent
         try:
             resp = agent.invoke({ "messages": user_interactions }, config=config)
             resp_struct = getStructuredResponse(resp, agent_model_type)
+            llm_errors = 0
         except Exception as e:
-            print("EXCEPTION",e)
-            user_interactions.append(HumanMessage(f"Encountered an error: {e}"))
+            llm_errors += 1
+            reportAgentError(e, llm_errors)   #visible; aborts after the limit
+            #Truncate: the litellm 400 body echoes the whole request, so appending
+            #it verbatim makes each retry's error balloon (KB -> MB across retries).
+            user_interactions.append(HumanMessage(f"Encountered an error: {str(e)[:2000]}"))
             continue
 
         questions = resp_struct.questions_to_user if multi_question_mode else resp_struct.question_to_user
@@ -434,7 +441,7 @@ Current scratchpad contents
             print("NO QUESTION IN RESPONSE")
             continue        
 
-        print("OUTPUT", prettyPrintPydantic(resp_struct), "\n\n" )
+        debugPrint("OUTPUT", prettyPrintPydantic(resp_struct), "\n\n" )
 
         if resp_struct.done:
             print("DONE")
@@ -611,17 +618,22 @@ New used-instance code:
     new_instance_code = None
     use_instance_code = None
 
-    print("AGENT START")
+    debugPrint("AGENT START")
+    llm_errors = 0
     while(accepted == False):
         #Invoke the agent
         try:
             resp_struct = callModelWithStructuredOutput(llm_model, sys, user_interactions, ParameterModelCallOutput)            
+            llm_errors = 0
         except Exception as e:
-            print("EXCEPTION",e)
-            user_interactions.append(HumanMessage(f"Encountered an error: {e}"))
+            llm_errors += 1
+            reportAgentError(e, llm_errors)   #visible; aborts after the limit
+            #Truncate: the litellm 400 body echoes the whole request, so appending
+            #it verbatim makes each retry's error balloon (KB -> MB across retries).
+            user_interactions.append(HumanMessage(f"Encountered an error: {str(e)[:2000]}"))
             continue
 
-        print("OUTPUT", prettyPrintPydantic(resp_struct), "\n\n" )
+        debugPrint("OUTPUT", prettyPrintPydantic(resp_struct), "\n\n" )
 
         #Automatic validation
         valid, fail_message = autoValidateNewInstanceCode(resp_struct.new_instance_code, instance_validator, group_validator, structured_output_model, instantiation_list_name)

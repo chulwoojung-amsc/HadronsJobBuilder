@@ -1,6 +1,22 @@
 from femtomeas.agent_common.common import *
 from femtomeas.agent_common.routing_agent import routingAgent
 
+#--- Pre-refactor measurement-agent imports, superseded by routingAgent above.
+#    Left commented for revival if a portion is needed; note observable_info.py
+#    was removed in the refactor, so that line cannot be revived as-is.
+# from .state import *
+# from femtomeas.meas_config_agent.hadrons_xml import HadronsXML
+# import femtomeas.workflow_manager as wfman
+# from .action_config import identifyActions
+# from .observable_info import observableSkills, identifyObservables
+# from .source_config import identifySources
+# from .eigenvectors import setupEigenSolvers
+# from .solver_config import identifySolvers
+# from .propagator_config import identifyPropagators
+# from .smeared_prop_config import identifySmearedPropagators
+# from .observable_config import configureObservables
+# from femtomeas.meas_config_agent.gauge import identifyGaugeConfigs
+
 from typing import Tuple, TypeVar, ClassVar
 
 from langchain_core.messages import BaseMessage
@@ -134,15 +150,18 @@ The following group names are reserved and cannot be used: f{reserved_names}
 
     tools=[listGroupHandles]
 
-    graph = routingAgent(llm_model, "meas_config_agent", role_header=role_header, user_query_rules=user_query_rules, code_rules=code_rules, additional_sys_prompt_content=additional_sys_prompt_content, tools=tools, node_enactor=enactor)
-
-    def enactor(f, a): 
+    #enactor must be defined before it is passed to routingAgent below (it was
+    #referenced before its def in the pulled main code -> UnboundLocalError).
+    def enactor(f, a):
         ret = f(*a)
         if do_checkpoint:
             state, _ = getCurrentState()
             checkpointState(state, checkpoint_file)
         return ret
-    
+
+    #routingAgent does not take node_enactor; the enactor is applied via graph.eval below.
+    graph = routingAgent(llm_model, "meas_config_agent", role_header=role_header, user_query_rules=user_query_rules, code_rules=code_rules, additional_sys_prompt_content=additional_sys_prompt_content, tools=tools)
+
     graph.eval(enactor=enactor)
 
 def measConfigAgent(llm_model, 

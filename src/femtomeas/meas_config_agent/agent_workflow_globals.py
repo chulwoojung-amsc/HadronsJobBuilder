@@ -2,19 +2,20 @@ from typing import Callable, Tuple, Dict, Any, Union
 from inspect import signature, getdoc, currentframe
 from pydantic import BaseModel
 from femtomeas.agent_common.routing_agent_registries import enwrapWorkflowOperation, getWorkflowCallables
+from femtomeas.agent_common.common import debugPrint
 
 #Names that cannot be used by the agents
 reserved_names = []
 
 def addReservedName(nm: str):
-    print("addReservedName ", nm)
+    debugPrint("addReservedName ", nm)
     if nm not in reserved_names:
         reserved_names.append(nm)
 
 #Map of instance class string (e.g. actions, sources) to type (ActionConfig, SourceConfig)
 instance_class_registry = {}
 def registerInstanceClass(instance_class: str, instance_model: type):
-    print("registerInstanceClass ", instance_class, instance_model.__name__)
+    debugPrint("registerInstanceClass ", instance_class, instance_model.__name__)
     instance_class_registry[instance_class] = instance_model
 
 #Registry for models allowed for Union types within instance models
