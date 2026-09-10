@@ -14,16 +14,16 @@ export AMSC_I2_API_KEY=$(cat /home/chulwoo/Claude/BNL/BNL-key)
 #  models   : gemma-4-26b nemotron-3-ultra-550b-nvfp4 gpt-oss-120b nemotron-3-super-120b
 export FEMTOMEAS_LLM_MODEL="nemotron-3-ultra-550b-nvfp4"
 export FEMTOMEAS_LLM_MODEL="nemotron-3-super-120b"
-export FEMTOMEAS_LLM_MODEL="gpt-oss-120b"
+#export FEMTOMEAS_LLM_MODEL="gpt-oss-120b"
 export FEMTOMEAS_LLM_BASE_URL="https://inference0-api.sdcc.bnl.gov"
 export FEMTOMEAS_LLM_API_KEY=${AMSC_I2_API_KEY}
 
-DIR=/home/chulwoo/Claude/HadronsJobBuilder
+DIR=/home/chulwoo/Claude/HadronsJobBuilder_master
 unset PYTHONPATH
 export PYTHONPATH=${DIR}/src:${DIR}/build/lib${PYTHONPATH:+:${PYTHONPATH}}
 
 # API backend: LOCAL = real execution on this machine, SPOOF = fake dry-run,
 # IRI/IRI_SF_HYBRID/SF = remote (NERSC). Pre-set FEMTOMEAS_API_IMPL to override.
 #export FEMTOMEAS_API_IMPL=${FEMTOMEAS_API_IMPL:-LOCAL}
-#export FEMTOMEAS_API_IMPL="SPOOF"
-export FEMTOMEAS_API_IMPL="LOCAL"
+export FEMTOMEAS_API_IMPL="SPOOF"
+#export FEMTOMEAS_API_IMPL="LOCAL"
